@@ -4,5 +4,7 @@ tqdm
 scipy
 datasets
 transformers
-sklearn
+scikit-learn
 pandas
+matplotlib
+seaborn

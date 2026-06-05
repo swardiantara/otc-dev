@@ -28,9 +28,8 @@ class CoralModel(BertForSequenceClassification):
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(config.hidden_size, 1, bias=False)
         self.linear_1_bias = nn.Parameter(
-            torch.zeros(self.num_labels-1).float())
+            torch.zeros(self.num_labels - 1).float())
 
-        # Initialize weights and apply final processing
         self.post_init()
 
     def forward(
@@ -46,12 +45,6 @@ class CoralModel(BertForSequenceClassification):
         output_hidden_states=None,
         return_dict=None,
     ):
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
@@ -67,7 +60,6 @@ class CoralModel(BertForSequenceClassification):
         )
 
         pooled_output = outputs[1]
-
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         logits = logits + self.linear_1_bias
@@ -88,6 +80,7 @@ class CoralModel(BertForSequenceClassification):
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = CoralLoss()
                 loss = loss_fct(logits, labels)
+
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
@@ -98,5 +91,3 @@ class CoralModel(BertForSequenceClassification):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
-
-
