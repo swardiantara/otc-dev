@@ -1,10 +1,19 @@
-numpy
+# Core ML
 torch
-tqdm
+# datasets 3.0 (Oct 2024) removed dataset-script execution entirely;
+# amazon_reviews_multi, snli and other hub datasets still use scripts -> stay on 2.x.
+datasets>=2.6.0,<3.0.0
+# transformers 5.x changed several TrainingArguments params and internal APIs;
+# pin to 4.x to match the paper-era interface (evaluation_strategy, etc.).
+transformers>=4.24.0,<5.0.0
+
+# Standard scientific stack
+numpy
 scipy
-datasets
-transformers
 scikit-learn
 pandas
+tqdm
+
+# Visualisation (used by scripts/visualize_results.py)
 matplotlib
 seaborn

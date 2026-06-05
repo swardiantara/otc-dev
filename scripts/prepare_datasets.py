@@ -40,7 +40,7 @@ def prepare_amazon_reviews(data_dir: Path, overwrite: bool) -> bool:
         return False
 
     print("  Downloading amazon_reviews_multi (en) ...")
-    ds = load_dataset("amazon_reviews_multi", "en")
+    ds = load_dataset("amazon_reviews_multi", "en", trust_remote_code=True)
 
     out.mkdir(parents=True, exist_ok=True)
     splits = {"train": "train", "validation": "validation", "test": "test"}
@@ -63,7 +63,7 @@ def prepare_snli(data_dir: Path, overwrite: bool) -> bool:
         return False
 
     print("  Downloading snli ...")
-    ds = load_dataset("snli")
+    ds = load_dataset("snli", trust_remote_code=True)
 
     out.mkdir(parents=True, exist_ok=True)
     splits = {"train": "train", "validation": "validation", "test": "test"}
@@ -88,7 +88,7 @@ def prepare_sst5(data_dir: Path, overwrite: bool) -> bool:
         return False
 
     print("  Downloading SetFit/sst5 ...")
-    ds = load_dataset("SetFit/sst5")
+    ds = load_dataset("SetFit/sst5", trust_remote_code=True)
 
     out.mkdir(parents=True, exist_ok=True)
     splits = {"train": "train", "validation": "validation", "test": "test"}
@@ -111,7 +111,7 @@ def prepare_yelp(data_dir: Path, overwrite: bool, val_fraction: float = 0.1) -> 
         return False
 
     print("  Downloading yelp_review_full ...")
-    ds = load_dataset("yelp_review_full")
+    ds = load_dataset("yelp_review_full", trust_remote_code=True)
 
     out.mkdir(parents=True, exist_ok=True)
 
