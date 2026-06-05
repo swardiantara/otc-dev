@@ -31,7 +31,8 @@ from scripts.analyze_results import (
 ROOT_PATH = Path(__file__).parent.parent
 DEFAULT_OUTPUT_DIR = ROOT_PATH / "results" / "figures"
 
-DATASET_ORDER = ["sst5", "amazon_reviews", "yelp", "snli"]
+# "amazon_reviews" excluded from defaults; kept in list so plots work if re-added later.
+DATASET_ORDER = ["sst5", "yelp", "snli"]
 
 METRIC_LABELS = {
     "accuracy": "Accuracy",

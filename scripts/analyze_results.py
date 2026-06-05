@@ -118,7 +118,8 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", nargs="+",
-        default=["amazon_reviews", "snli", "sst5", "yelp"],
+        # "amazon_reviews" excluded: dataset source defunct; re-add when available.
+        default=["snli", "sst5", "yelp"],
         help="Datasets to include in summary.",
     )
     parser.add_argument(

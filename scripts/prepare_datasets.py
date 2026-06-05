@@ -170,7 +170,10 @@ def update_datasets_json(data_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 PREPARERS = {
-    "amazon_reviews": prepare_amazon_reviews,
+    # "amazon_reviews" excluded: HuggingFace dataset 'amazon_reviews_multi' is defunct
+    # (DefunctDatasetError). The prepare_amazon_reviews() function above is kept so it
+    # can be re-enabled once an alternative source is found.
+    # "amazon_reviews": prepare_amazon_reviews,
     "snli": prepare_snli,
     "sst5": prepare_sst5,
     "yelp": prepare_yelp,

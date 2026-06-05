@@ -103,7 +103,9 @@ losses_dict = {
     "CORAL": Trainer,
 }
 
-ALL_DATASETS = ["sst5", "amazon_reviews", "yelp", "snli"]
+# "amazon_reviews" excluded: HuggingFace dataset 'amazon_reviews_multi' is defunct
+# (DefunctDatasetError). Re-add it once an alternative source is available.
+ALL_DATASETS = ["sst5", "yelp", "snli"]
 ALL_LOSSES = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
 ALL_LRS = [1e-4, 7.5e-5, 5e-5, 2.5e-5, 1e-5]
 
