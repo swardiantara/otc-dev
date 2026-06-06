@@ -241,7 +241,7 @@ if __name__ == '__main__':
                         output_dir=str(output_dir),
                         fp16=use_cuda,
                         num_train_epochs=epochs_,
-                        evaluation_strategy="epoch",
+                        eval_strategy="epoch",
                         save_strategy="epoch",
                         load_best_model_at_end=True,
                         logging_steps=50,
