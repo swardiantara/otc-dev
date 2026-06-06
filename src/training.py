@@ -53,7 +53,7 @@ def compute_metrics_coral(pred):
         acc += cnt[k] / len(preds)
         dico_logs_[f"off-by-{k}-accuracy"] = round(acc, 4)
 
-    return dico_logs_
+    return {k: v for k, v in dico_logs_.items() if k != "labels-confusion_matrix"}
 
 
 def compute_metrics(pred):
@@ -81,7 +81,7 @@ def compute_metrics(pred):
         acc += cnt[k] / len(preds)
         dico_logs_[f"off-by-{k}-accuracy"] = round(acc, 4)
 
-    return dico_logs_
+    return {k: v for k, v in dico_logs_.items() if k != "labels-confusion_matrix"}
 
 
 def preprocess_function(examples):
