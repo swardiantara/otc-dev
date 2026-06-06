@@ -151,51 +151,67 @@ if __name__ == '__main__':
     model_checkpoint = "google/bert_uncased_L-2_H-128_A-2"
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
+    weight_decay_ = 0.01
+    train_batch_size_ = 1024
+    valid_batch_size_ = 1024
+
     for data_file in args.datasets:
+        # Dataset loading and encoding is independent of loss/lr — do it once per dataset.
+        num_classes = datasets[data_file]["num_classes"]
+        max_len = datasets[data_file]["tok_len"]
+        sentence1_key, sentence2_key = datasets[data_file]["task"]
+        dist_matrix = datasets[data_file]["dist"]
+        directory_path = datasets[data_file]["path"]
+
+        data_path = f"{directory_path}/{data_file}"
+        dataset = load_dataset(
+            'csv',
+            data_files={
+                'train': f"{data_path}/{data_file}_train.csv",
+                'validation': f"{data_path}/{data_file}_validation.csv",
+                'test': f"{data_path}/{data_file}_test.csv",
+            },
+        )
+
+        # Drop rows where any text column is None/null/blank.
+        # load_dataset('csv') can re-introduce None values via Arrow type
+        # inference even when the CSV was cleaned by prepare_datasets.py.
+        _text_cols = [c for c in [sentence1_key, sentence2_key] if c is not None]
+
+        def _has_valid_text(example):
+            return all(
+                example.get(col) is not None
+                and str(example.get(col, "")).strip() not in ("", "nan", "none")
+                for col in _text_cols
+            )
+
+        dataset = dataset.filter(_has_valid_text)
+        encoded_dataset = dataset.map(preprocess_function, batched=True)
+
+        epochs_ = max(1, int(20_000_000 / len(dataset['train'])))
+        stopping_rate = max(1, int(0.05 * epochs_))
+
         for loss_type in args.losses:
             for learning_rate_ in args.learning_rates:
-                num_classes = datasets[data_file]["num_classes"]
-                max_len = datasets[data_file]["tok_len"]
-                sentence1_key, sentence2_key = datasets[data_file]["task"]
-                dist_matrix = datasets[data_file]["dist"]
-                directory_path = datasets[data_file]["path"]
-
-                data_path = f"{directory_path}/{data_file}"
-                dataset = load_dataset(
-                    'csv',
-                    data_files={
-                        'train': f"{data_path}/{data_file}_train.csv",
-                        'validation': f"{data_path}/{data_file}_validation.csv",
-                        'test': f"{data_path}/{data_file}_test.csv",
-                    },
-                )
-
-                # Drop rows where any text column is None/null/blank.
-                # load_dataset('csv') can re-introduce None values via Arrow type
-                # inference even when the CSV was cleaned by prepare_datasets.py.
-                _text_cols = [c for c in [sentence1_key, sentence2_key] if c is not None]
-
-                def _has_valid_text(example):
-                    return all(
-                        example.get(col) is not None
-                        and str(example.get(col, "")).strip() not in ("", "nan", "none")
-                        for col in _text_cols
+                # Identify which seeds still need to run for this (dataset, loss, lr) combo.
+                pending_seeds = []
+                for k in args.seeds:
+                    model_name = "-".join([model_checkpoint, data_file, loss_type, str(k)])
+                    save_dir = (
+                        ROOT_PATH / "src" / "outputs_training" / "output_models"
+                        / data_file / "saved_models"
+                        / f"{model_name}_{epochs_}_ep_{learning_rate_}_lr_{train_batch_size_}_batch"
                     )
+                    if not save_dir.is_dir():
+                        pending_seeds.append(k)
 
-                dataset = dataset.filter(_has_valid_text)
-
-                encoded_dataset = dataset.map(preprocess_function, batched=True)
+                if not pending_seeds:
+                    print(f"Skipping {data_file}/{loss_type}/lr={learning_rate_} (all seeds done)")
+                    continue
 
                 dico_logs_ = {}
 
-                weight_decay_ = 0.01
-                train_batch_size_ = 1024
-                valid_batch_size_ = 1024
-
-                epochs_ = max(1, int(20_000_000 / len(dataset['train'])))
-                stopping_rate = max(1, int(0.05 * epochs_))
-
-                for k in tqdm(args.seeds, desc=f"{data_file}/{loss_type}/lr={learning_rate_}"):
+                for k in tqdm(pending_seeds, desc=f"{data_file}/{loss_type}/lr={learning_rate_}"):
                     random.seed(k)
                     np.random.seed(k)
                     torch.manual_seed(k)
@@ -208,10 +224,6 @@ if __name__ == '__main__':
                         / data_file / "saved_models"
                         / f"{model_name}_{epochs_}_ep_{learning_rate_}_lr_{train_batch_size_}_batch"
                     )
-
-                    if save_dir.is_dir():
-                        print(f"Skipping {save_dir.name} (already exists)")
-                        continue
 
                     if loss_type == "CORAL":
                         model = CoralModel.from_pretrained(
