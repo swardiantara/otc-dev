@@ -11,6 +11,7 @@ from src.model_coral import CoralModel
 from src.loss_functions import (
     OLL1Trainer, OLL15Trainer, OLL2Trainer,
     WKLTrainer, SOFT2Trainer, SOFT3Trainer, SOFT4Trainer, EMDTrainer,
+    BCEOrdinalTrainer,
 )
 import os
 import sys
@@ -106,12 +107,13 @@ losses_dict = {
     "SOFT4": SOFT4Trainer,
     "EMD": EMDTrainer,
     "CORAL": Trainer,
+    "BCE": BCEOrdinalTrainer,
 }
 
 # "amazon_reviews" excluded: HuggingFace dataset 'amazon_reviews_multi' is defunct
 # (DefunctDatasetError). Re-add it once an alternative source is available.
 ALL_DATASETS = ["sst5", "yelp", "snli"]
-ALL_LOSSES = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
+ALL_LOSSES = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE"]
 ALL_LRS = [1e-4, 7.5e-5, 5e-5, 2.5e-5, 1e-5]
 
 

@@ -213,6 +213,33 @@ class OLL15Trainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
+class BCEOrdinalTrainer(Trainer):
+    """Ordinal BCE loss.
+
+    Each sample y is encoded as a K-dimensional cumulative binary vector:
+      target[k] = 1  if k <= y  (i.e. the first y+1 positions are 1, the rest 0)
+    Example for K=5: label 0 -> [1,0,0,0,0], label 4 -> [1,1,1,1,1].
+
+    A sigmoid is applied to each of the K logits independently and BCE is
+    computed element-wise.  At inference time the predicted class is the
+    number of positions that exceed 0.5, minus 1 (clamped to [0, K-1]).
+    """
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        m = _unwrap(model)
+        num_classes = m.num_labels
+        labels = inputs["labels"]
+        device = labels.device
+        outputs = model(**inputs)
+        logits = outputs.logits  # (batch, K)
+
+        # Build cumulative binary targets via broadcasting: target[i,k] = (k <= y_i)
+        k = torch.arange(num_classes, device=device)          # (K,)
+        targets = (k <= labels.unsqueeze(1)).float()           # (batch, K)
+
+        loss = F.binary_cross_entropy_with_logits(logits, targets)
+        return (loss, outputs) if return_outputs else loss
+
+
 class EMDTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)

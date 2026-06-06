@@ -112,7 +112,7 @@ if __name__ == '__main__':
     model_dir = "google/"
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
-    losses = ["CE", "OLL15", "OLL1", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
+    losses = ["CE", "OLL15", "OLL1", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE"]
 
     for dataset_file in args.datasets:
         num_classes = datasets[dataset_file]["num_classes"]
@@ -209,6 +209,13 @@ if __name__ == '__main__':
                         (np.column_stack((np.zeros((preds.logits.cpu().detach().numpy().shape[0], 1)),
                                           expit(preds.logits.cpu().detach().numpy()))) > 0.5).sum(axis=1)
                     )
+                elif loss_func == "BCE":
+                    # BCE ordinal: sigmoid per position, class = (positions > 0.5) - 1
+                    # target[k]=1 iff k<=y, so predicted y = count(sigmoid>0.5) - 1
+                    sigmoid_out = expit(preds.logits.cpu().detach().numpy())
+                    distributions.extend(sigmoid_out.tolist())
+                    raw_preds = (sigmoid_out > 0.5).sum(axis=1) - 1
+                    predictions_test.extend(np.clip(raw_preds, 0, num_classes - 1).tolist())
                 else:
                     distributions.extend(softmax(preds.logits.cpu().detach().numpy(), axis=1).tolist())
                     predictions_test.extend(preds.logits.argmax(dim=1).tolist())
