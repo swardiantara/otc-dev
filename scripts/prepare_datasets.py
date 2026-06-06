@@ -50,6 +50,7 @@ def prepare_amazon_reviews(data_dir: Path, overwrite: bool) -> bool:
             # stars are 1-5; convert to 0-indexed labels
             "label": [s - 1 for s in ds[hf_split]["stars"]],
         })
+        df = _clean_df(df, ["text"], split_name)
         path = out / f"amazon_reviews_{split_name}.csv"
         df.to_csv(path, index=False)
         print(f"    Saved {len(df):,} rows -> {path.name}")
@@ -75,6 +76,7 @@ def prepare_snli(data_dir: Path, overwrite: bool) -> bool:
         })
         # Remove examples without a gold label (label == -1)
         df = df[df["label"] != -1].reset_index(drop=True)
+        df = _clean_df(df, ["premise", "hypothesis"], split_name)
         path = out / f"snli_{split_name}.csv"
         df.to_csv(path, index=False)
         print(f"    Saved {len(df):,} rows -> {path.name}")
@@ -98,6 +100,7 @@ def prepare_sst5(data_dir: Path, overwrite: bool) -> bool:
             "sentence": ds[hf_split]["text"],
             "label": ds[hf_split]["label"],
         })
+        df = _clean_df(df, ["sentence"], split_name)
         path = out / f"sst5_{split_name}.csv"
         df.to_csv(path, index=False)
         print(f"    Saved {len(df):,} rows -> {path.name}")
@@ -136,6 +139,7 @@ def prepare_yelp(data_dir: Path, overwrite: bool, val_fraction: float = 0.1) -> 
     })
 
     for split_name, df in [("train", train_df), ("validation", val_df), ("test", test_df)]:
+        df = _clean_df(df, ["text"], split_name)
         path = out / f"yelp_{split_name}.csv"
         df.to_csv(path, index=False)
         print(f"    Saved {len(df):,} rows -> {path.name}")
@@ -149,6 +153,36 @@ def prepare_yelp(data_dir: Path, overwrite: bool, val_fraction: float = 0.1) -> 
 def _already_done(out_dir: Path, name: str) -> bool:
     return all((out_dir / f"{name}_{split}.csv").exists()
                for split in ["train", "validation", "test"])
+
+
+def _clean_df(df: pd.DataFrame, text_cols: list, split_label: str) -> pd.DataFrame:
+    """Drop rows that would cause tokenizer errors:
+      - null / NaN in any text column
+      - non-string values (e.g. float NaN read back from CSV)
+      - blank or whitespace-only strings
+    Also ensures all text columns are stored as plain str.
+    """
+    before = len(df)
+
+    # Cast to str first so we can run string operations uniformly,
+    # but treat the literal string "nan" (from float NaN cast) as missing.
+    for col in text_cols:
+        df[col] = df[col].astype(str)
+
+    # Drop rows where a text column is NaN, "nan", "None", or blank after strip
+    bad_values = {"nan", "none", ""}
+    mask_ok = pd.Series(True, index=df.index)
+    for col in text_cols:
+        stripped = df[col].str.strip().str.lower()
+        mask_ok &= ~stripped.isin(bad_values)
+
+    df = df[mask_ok].reset_index(drop=True)
+
+    dropped = before - len(df)
+    if dropped:
+        print(f"      [{split_label}] Dropped {dropped:,} row(s) with null/empty text fields.")
+
+    return df
 
 
 def update_datasets_json(data_dir: Path) -> None:
