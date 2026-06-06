@@ -85,9 +85,14 @@ def compute_metrics(pred):
 
 
 def preprocess_function(examples):
+    # Explicit str() cast guards against Arrow/None values that would crash the
+    # fast tokenizer with "TextInputSequence must be str".
     if sentence2_key is None:
-        return tokenizer(examples[sentence1_key], truncation=True, padding='max_length', max_length=max_len)
-    return tokenizer(examples[sentence1_key], examples[sentence2_key], truncation=True, padding='max_length', max_length=max_len)
+        texts = [str(t) for t in examples[sentence1_key]]
+        return tokenizer(texts, truncation=True, padding='max_length', max_length=max_len)
+    texts1 = [str(t) for t in examples[sentence1_key]]
+    texts2 = [str(t) for t in examples[sentence2_key]]
+    return tokenizer(texts1, texts2, truncation=True, padding='max_length', max_length=max_len)
 
 
 losses_dict = {
@@ -164,6 +169,20 @@ if __name__ == '__main__':
                         'test': f"{data_path}/{data_file}_test.csv",
                     },
                 )
+
+                # Drop rows where any text column is None/null/blank.
+                # load_dataset('csv') can re-introduce None values via Arrow type
+                # inference even when the CSV was cleaned by prepare_datasets.py.
+                _text_cols = [c for c in [sentence1_key, sentence2_key] if c is not None]
+
+                def _has_valid_text(example):
+                    return all(
+                        example.get(col) is not None
+                        and str(example.get(col, "")).strip() not in ("", "nan", "none")
+                        for col in _text_cols
+                    )
+
+                dataset = dataset.filter(_has_valid_text)
 
                 encoded_dataset = dataset.map(preprocess_function, batched=True)
 

@@ -64,9 +64,11 @@ def preprocess_function(examples):
 
 
 def preprocess_function_unbatched(examples):
+    # Explicit str() cast guards against Arrow/None values that would crash the
+    # fast tokenizer with "TextInputSequence must be str".
     if sentence2_key is None:
-        return tokenizer(examples[sentence1_key], max_length=max_len)
-    return tokenizer(examples[sentence1_key], examples[sentence2_key], max_length=max_len)
+        return tokenizer(str(examples[sentence1_key]), max_length=max_len)
+    return tokenizer(str(examples[sentence1_key]), str(examples[sentence2_key]), max_length=max_len)
 
 
 def get_distributions(distributions: list, labels: list, correct: bool):
@@ -125,6 +127,19 @@ if __name__ == '__main__':
             'csv',
             data_files={'test': f"{data_path}/{dataset_file}_test.csv"},
         )
+
+        # Drop rows where any text column is None/null/blank (Arrow type inference
+        # can re-introduce nulls even after prepare_datasets.py has cleaned the CSV).
+        _text_cols = [c for c in [sentence1_key, sentence2_key] if c is not None]
+
+        def _has_valid_text(example):
+            return all(
+                example.get(col) is not None
+                and str(example.get(col, "")).strip() not in ("", "nan", "none")
+                for col in _text_cols
+            )
+
+        dataset = dataset.filter(_has_valid_text)
 
         models_path = ROOT_PATH / "src" / "outputs_training" / "output_models" / dataset_file / "saved_models" / model_dir
         if not models_path.is_dir():
