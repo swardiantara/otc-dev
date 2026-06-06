@@ -13,7 +13,7 @@ def _unwrap(model):
 
 
 class OLL2Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -32,7 +32,7 @@ class OLL2Trainer(Trainer):
 
 
 class nOLL2Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -51,7 +51,7 @@ class nOLL2Trainer(Trainer):
 
 
 class WKLTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         labels = inputs["labels"]
@@ -81,7 +81,7 @@ class WKLTrainer(Trainer):
 
 
 class SOFT10Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -100,7 +100,7 @@ class SOFT10Trainer(Trainer):
 
 
 class SOFT5Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -119,7 +119,7 @@ class SOFT5Trainer(Trainer):
 
 
 class SOFT2Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -138,7 +138,7 @@ class SOFT2Trainer(Trainer):
 
 
 class SOFT3Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -157,7 +157,7 @@ class SOFT3Trainer(Trainer):
 
 
 class SOFT4Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -176,7 +176,7 @@ class SOFT4Trainer(Trainer):
 
 
 class OLL1Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -195,7 +195,7 @@ class OLL1Trainer(Trainer):
 
 
 class OLL15Trainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         dist_matrix = m.dist_matrix
@@ -214,7 +214,7 @@ class OLL15Trainer(Trainer):
 
 
 class EMDTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         m = _unwrap(model)
         num_classes = m.num_labels
         labels = inputs["labels"]
