@@ -37,7 +37,7 @@ pip install -r requirements.txt
 # ── Step 2: Prepare datasets ────────────────────────────────
 echo ""
 echo "[2/5] Preparing datasets ..."
-python -m scripts.prepare_datasets --datasets $DATASETS --overwrite
+python -m scripts.prepare_datasets --datasets $DATASETS
 
 # ── Step 3: Training ────────────────────────────────────────
 echo ""
