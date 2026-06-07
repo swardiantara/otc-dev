@@ -22,6 +22,42 @@ sys.path.append(os.getcwd())
 ROOT_PATH = Path(__file__).parent.parent
 
 
+def get_inference_cols(n_distances: int, num_classes: int) -> list:
+    """Return the ordered column list for metrics_test_set.csv for a given dataset."""
+    cols = ["dataset", "loss", "pretrained_model", "trained_model",
+            "accuracy", "precision", "recall", "f1_score"]
+    for k in range(1, n_distances):
+        cols.append(f"distance_{k}")
+    for k in range(1, n_distances - 1):
+        cols.append(f"off-by-{k}-accuracy")
+    cols.extend(["mae", "mse", "kendalltau"])
+    for k in range(num_classes):
+        cols.append(f"distrib-{k}")
+    return cols
+
+
+# Maps predefined column names to the keys used inside dico_logs_.
+_INFERENCE_COL_TO_KEY = {
+    "accuracy": "labels-accuracy",
+    "precision": "labels-precision",
+    "recall": "labels-recall",
+    "f1_score": "labels-f1_score",
+}
+
+
+def build_inference_row(prefix: list, dico_logs_: dict, inference_cols: list) -> list:
+    """Build a CSV row aligned to inference_cols; prefix covers the first 4 identifier columns."""
+    prefix_cols = {"dataset", "loss", "pretrained_model", "trained_model"}
+    prefix_iter = iter(prefix)
+    row = []
+    for col in inference_cols:
+        if col in prefix_cols:
+            row.append(next(prefix_iter))
+        else:
+            row.append(dico_logs_.get(_INFERENCE_COL_TO_KEY.get(col, col), ""))
+    return row
+
+
 def evaluate_model(labels: List[int], preds: List[int]) -> dict:
     precision, recall, f1, _ = precision_recall_fscore_support(
         labels, preds, average='weighted')
@@ -105,9 +141,6 @@ if __name__ == '__main__':
     with open(ROOT_PATH / "src" / "datasets.json", "r") as f:
         datasets = json.load(f)
 
-    output_path_metrics = ROOT_PATH / "src" / "outputs_training" / "output_metrics" / "metrics_test_set.csv"
-    output_path_metrics.parent.mkdir(parents=True, exist_ok=True)
-
     model_checkpoint = "google/bert_uncased_L-2_H-128_A-2"
     model_dir = "google/"
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
@@ -117,6 +150,14 @@ if __name__ == '__main__':
     for dataset_file in args.datasets:
         num_classes = datasets[dataset_file]["num_classes"]
         n_distances = datasets[dataset_file]["n_distances"]
+        inference_cols = get_inference_cols(n_distances, num_classes)
+
+        output_path_metrics = (
+            ROOT_PATH / "src" / "outputs_training" / "output_metrics"
+            / dataset_file / "metrics_test_set.csv"
+        )
+        output_path_metrics.parent.mkdir(parents=True, exist_ok=True)
+
         max_len = datasets[dataset_file]["tok_len"]
         sentence1_key, sentence2_key = datasets[dataset_file]["task"]
         dist_matrix = datasets[dataset_file]["dist"]
@@ -166,15 +207,15 @@ if __name__ == '__main__':
             dictpath[corrected_path] = {"path": path, "loss": loss_name}
 
         if output_path_metrics.is_file():
-            dt = pd.read_csv(output_path_metrics, header=None)
+            dt = pd.read_csv(output_path_metrics, header=0)
         else:
-            dt = pd.DataFrame(columns=range(5))
+            dt = pd.DataFrame(columns=inference_cols)
 
         for path in np.sort(list(dictpath.keys())):
             trained_model = dictpath[path]["path"]
             loss_func = dictpath[path]["loss"]
 
-            if trained_model in list(dt.iloc[:, 3]) if len(dt.columns) > 3 else []:
+            if "trained_model" in dt.columns and trained_model in dt["trained_model"].tolist():
                 continue
 
             pre_trained_model = f"{model_dir}bert-tiny"
@@ -222,11 +263,12 @@ if __name__ == '__main__':
             dico_logs_ = {}
             evaluate_model(labels=encoded_dataset["test"]["label"], preds=predictions_test)
 
-            new_row = (
-                [dataset_file, loss_func, pre_trained_model, trained_model]
-                + [dico_logs_[k] for k in dico_logs_ if k != "labels-confusion_matrix"]
-            )
+            prefix = [dataset_file, loss_func, pre_trained_model, trained_model]
+            new_row = build_inference_row(prefix, dico_logs_, inference_cols)
 
+            write_header = not output_path_metrics.is_file() or output_path_metrics.stat().st_size == 0
             with open(output_path_metrics, "a+", newline="") as f:
                 writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(inference_cols)
                 writer.writerow(new_row)
