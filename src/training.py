@@ -28,6 +28,31 @@ sys.path.append(os.getcwd())
 ROOT_PATH = Path(__file__).parent.parent
 
 
+def get_training_cols(n_distances: int) -> list:
+    """Return the ordered column list for fine_tuning_metrics.csv for a given dataset."""
+    cols = ["model_name", "epochs", "learning_rate", "train_batch_size",
+            "accuracy", "precision", "recall", "f1_score"]
+    for k in range(1, n_distances):
+        cols.append(f"distance_{k}")
+    for k in range(1, n_distances - 1):
+        cols.append(f"off-by-{k}-accuracy")
+    return cols
+
+
+# Maps predefined column names to the keys used inside dico_logs_.
+_TRAINING_COL_TO_KEY = {
+    "accuracy": "labels-accuracy",
+    "precision": "labels-precision",
+    "recall": "labels-recall",
+    "f1_score": "labels-f1_score",
+}
+
+
+def build_training_row(dico_logs_: dict, training_cols: list) -> list:
+    """Build a CSV row aligned to training_cols from dico_logs_."""
+    return [dico_logs_.get(_TRAINING_COL_TO_KEY.get(col, col), "") for col in training_cols]
+
+
 def compute_metrics_coral(pred):
     labels = pred.label_ids
     preds = (np.column_stack((np.zeros((pred.predictions.shape[0], 1)), expit(
@@ -190,6 +215,9 @@ if __name__ == '__main__':
         dataset = dataset.filter(_has_valid_text)
         encoded_dataset = dataset.map(preprocess_function, batched=True)
 
+        n_distances = datasets[data_file]["n_distances"]
+        training_cols = get_training_cols(n_distances)
+
         epochs_ = max(1, int(20_000_000 / len(dataset['train'])))
         stopping_rate = max(1, int(0.05 * epochs_))
 
@@ -288,10 +316,12 @@ if __name__ == '__main__':
 
                     output_path_metrics = (
                         ROOT_PATH / "src" / "outputs_training" / "output_metrics"
-                        / "fine_tuning_metrics.csv"
+                        / data_file / "fine_tuning_metrics.csv"
                     )
                     output_path_metrics.parent.mkdir(parents=True, exist_ok=True)
-                    values = [dico_logs_[key] for key in dico_logs_ if key != "labels-confusion_matrix"]
+                    write_header = not output_path_metrics.is_file()
                     with open(output_path_metrics, "a+", newline="") as f:
                         writer = csv.writer(f)
-                        writer.writerow(values)
+                        if write_header:
+                            writer.writerow(training_cols)
+                        writer.writerow(build_training_row(dico_logs_, training_cols))

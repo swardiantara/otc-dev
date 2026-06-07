@@ -15,43 +15,37 @@ import pandas as pd
 import numpy as np
 
 ROOT_PATH = Path(__file__).parent.parent
-DEFAULT_METRICS_CSV = (
-    ROOT_PATH / "src" / "outputs_training" / "output_metrics" / "metrics_test_set.csv"
-)
+DEFAULT_METRICS_DIR = ROOT_PATH / "src" / "outputs_training" / "output_metrics"
 
-METRIC_COLS = [
-    "accuracy", "precision", "recall", "f1_score",
-    "distance_1", "distance_2", "distance_3", "distance_4",
-    "off-by-1-accuracy", "off-by-2-accuracy", "off-by-3-accuracy",
-    "mae", "mse", "kendalltau",
-]
-
-# Columns written by inference.py before metric columns
-PREFIX_COLS = ["dataset", "loss", "pretrained_model", "trained_model"]
+ALL_DATASETS = ["snli", "sst5", "yelp", "amazon_reviews"]
 
 LOSS_ORDER = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
 
+PREFIX_COLS = ["dataset", "loss", "pretrained_model", "trained_model"]
 
-def load_metrics(csv_path: Path) -> pd.DataFrame:
-    """Load the raw metrics CSV and assign column names."""
-    raw = pd.read_csv(csv_path, header=None)
 
-    n_prefix = len(PREFIX_COLS)
-    n_metrics = raw.shape[1] - n_prefix
-    auto_metric_cols = [f"metric_{i}" for i in range(n_metrics)]
+def load_metrics(metrics_dir: Path, datasets: list) -> pd.DataFrame:
+    """Load per-dataset metrics_test_set.csv files and concatenate them."""
+    frames = []
+    for ds in datasets:
+        csv_path = metrics_dir / ds / "metrics_test_set.csv"
+        if not csv_path.is_file():
+            print(f"  Warning: no metrics file found for dataset '{ds}' at {csv_path}, skipping.")
+            continue
+        df = pd.read_csv(csv_path, header=0)
+        frames.append(df)
 
-    raw.columns = PREFIX_COLS + auto_metric_cols
+    if not frames:
+        raise FileNotFoundError(
+            f"No metrics_test_set.csv files found under {metrics_dir}. "
+            "Run inference.py first."
+        )
 
-    # Try to assign known metric names to the first columns after prefix
-    named_metrics = METRIC_COLS[:n_metrics]
-    rename = {f"metric_{i}": named_metrics[i] for i in range(len(named_metrics))}
-    raw = raw.rename(columns=rename)
-
-    return raw
+    return pd.concat(frames, ignore_index=True)
 
 
 def extract_run_info(df: pd.DataFrame) -> pd.DataFrame:
-    """Parse dataset, loss, learning-rate and seed from the trained_model path."""
+    """Parse learning-rate and epochs from the trained_model path."""
     # trained_model format: google/bert_uncased_L-2_H-128_A-2-{dataset}-{loss}-{seed}_{epochs}_ep_{lr}_lr_{batch}_batch
     def _parse(row):
         path = str(row["trained_model"])
@@ -75,14 +69,13 @@ def extract_run_info(df: pd.DataFrame) -> pd.DataFrame:
 def best_per_loss(df: pd.DataFrame, metric: str, higher_is_better: bool) -> pd.DataFrame:
     """For each (dataset, loss) pair keep only the run with the best metric value."""
     if metric not in df.columns:
-        raise ValueError(f"Metric '{metric}' not found. Available: {[c for c in df.columns if c not in PREFIX_COLS]}")
+        raise ValueError(
+            f"Metric '{metric}' not found. Available: "
+            f"{[c for c in df.columns if c not in PREFIX_COLS]}"
+        )
 
     agg = df.groupby(["dataset", "loss"])[metric]
-    if higher_is_better:
-        idx = agg.idxmax()
-    else:
-        idx = agg.idxmin()
-
+    idx = agg.idxmax() if higher_is_better else agg.idxmin()
     return df.loc[idx.dropna().astype(int)].reset_index(drop=True)
 
 
@@ -92,7 +85,6 @@ def pivot_table(df: pd.DataFrame, metric: str, datasets: list) -> pd.DataFrame:
     sub[metric] = sub[metric].round(4)
     pivot = sub.pivot(index="loss", columns="dataset", values=metric)
 
-    # Reorder rows to match paper loss ordering
     present = [l for l in LOSS_ORDER if l in pivot.index]
     extra = [l for l in pivot.index if l not in LOSS_ORDER]
     pivot = pivot.loc[present + extra]
@@ -113,8 +105,8 @@ def parse_args():
         description="Summarize inference results into pivot tables by dataset and loss function."
     )
     parser.add_argument(
-        "--metrics_csv", type=Path, default=DEFAULT_METRICS_CSV,
-        help="Path to metrics_test_set.csv produced by inference.py.",
+        "--metrics_dir", type=Path, default=DEFAULT_METRICS_DIR,
+        help="Directory containing per-dataset metric folders (default: src/outputs_training/output_metrics).",
     )
     parser.add_argument(
         "--datasets", nargs="+",
@@ -145,13 +137,8 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if not args.metrics_csv.is_file():
-        print(f"ERROR: metrics file not found at {args.metrics_csv}")
-        print("Run inference.py first to generate evaluation results.")
-        raise SystemExit(1)
-
-    print(f"Loading {args.metrics_csv} ...")
-    df = load_metrics(args.metrics_csv)
+    print(f"Loading metrics from {args.metrics_dir} ...")
+    df = load_metrics(args.metrics_dir, args.datasets)
     df = extract_run_info(df)
 
     print(f"  Total rows: {len(df)}")
