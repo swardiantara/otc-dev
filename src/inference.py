@@ -166,8 +166,7 @@ if __name__ == '__main__':
             dictpath[corrected_path] = {"path": path, "loss": loss_name}
 
         if output_path_metrics.is_file():
-            dt = pd.read_csv(output_path_metrics, header=None, sep='\n')
-            dt = dt[0].str.split(',', expand=True)
+            dt = pd.read_csv(output_path_metrics, header=None)
         else:
             dt = pd.DataFrame(columns=range(5))
 
