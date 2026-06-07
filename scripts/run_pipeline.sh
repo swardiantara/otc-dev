@@ -16,9 +16,9 @@ cd "$REPO_ROOT"
 # "amazon_reviews" excluded: HuggingFace source defunct (DefunctDatasetError).
 # Re-add it (DATASETS="amazon_reviews snli sst5 yelp") once an alternative is available.
 DATASETS="${DATASETS:-snli sst5 yelp}"
-LOSSES="${LOSSES:-CE WKL SOFT2 SOFT3 SOFT4 EMD CORAL OLL1 OLL15 OLL2 BCE}"
-LRS="${LRS:-1e-5}"
-# 1e-4 7.5e-5 5e-5 2.5e-5 
+LOSSES="${LOSSES:-CE BCE OLL1 OLL15 OLL2 CORAL WKL SOFT2 SOFT3 SOFT4 EMD}"
+LRS="${LRS:-1e-4}"
+# 1e-5 7.5e-5 5e-5 2.5e-5 
 SEEDS="${SEEDS:-1}"
 #  2 3 4 5
 echo "======================================================="
