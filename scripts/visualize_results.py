@@ -25,7 +25,7 @@ import seaborn as sns
 # Re-use helpers from analyze_results
 from scripts.analyze_results import (
     load_metrics, extract_run_info, best_per_loss, LOSS_ORDER,
-    DEFAULT_METRICS_CSV,
+    DEFAULT_METRICS_DIR,
 )
 
 ROOT_PATH = Path(__file__).parent.parent
@@ -170,7 +170,7 @@ def parse_args():
         description="Generate comparison figures from ordinal classification results."
     )
     parser.add_argument(
-        "--metrics_csv", type=Path, default=DEFAULT_METRICS_CSV,
+        "--metrics_csv", type=Path, default=DEFAULT_METRICS_DIR,
         help="Path to metrics_test_set.csv.",
     )
     parser.add_argument(

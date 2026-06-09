@@ -19,7 +19,7 @@ DEFAULT_METRICS_DIR = ROOT_PATH / "src" / "outputs_training" / "output_metrics"
 
 ALL_DATASETS = ["snli", "sst5", "yelp", "amazon_reviews"]
 
-LOSS_ORDER = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
+LOSS_ORDER = ["CE", "BCE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL"]
 
 PREFIX_COLS = ["dataset", "loss", "pretrained_model", "trained_model"]
 
@@ -128,7 +128,7 @@ def parse_args():
         help="If set, the best run is the one with the LOWEST sort_metric (e.g. mae, mse).",
     )
     parser.add_argument(
-        "--output", type=Path, default=None,
+        "--output", type=Path, default="results/summary.csv",
         help="If provided, save the full best-run table to this CSV path.",
     )
     return parser.parse_args()
