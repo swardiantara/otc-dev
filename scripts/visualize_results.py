@@ -170,8 +170,8 @@ def parse_args():
         description="Generate comparison figures from ordinal classification results."
     )
     parser.add_argument(
-        "--metrics_csv", type=Path, default=DEFAULT_METRICS_DIR,
-        help="Path to metrics_test_set.csv.",
+        "--metrics_dir", type=Path, default=DEFAULT_METRICS_DIR,
+        help="Path to the directory containing metrics_test_set.csv.",
     )
     parser.add_argument(
         "--datasets", nargs="+", default=DATASET_ORDER,
@@ -206,13 +206,13 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if not args.metrics_csv.is_file():
-        print(f"ERROR: {args.metrics_csv} not found. Run inference.py first.")
+    if not args.metrics_dir:
+        print(f"ERROR: {args.metrics_dir} not found. Run inference.py first.")
         raise SystemExit(1)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_metrics(args.metrics_csv, args.datasets)
+    df = load_metrics(args.metrics_dir, args.datasets)
     df = extract_run_info(df)
     higher = not args.lower_is_better
     best = best_per_loss(df, args.sort_metric, higher_is_better=higher)
