@@ -195,7 +195,7 @@ if __name__ == '__main__':
             loss_name = None
             loss_len = 0
             for loss in losses:
-                if loss in path:
+                if f"-{loss}-" in path:
                     loss_len = len(loss)
                     loss_name = loss
                     break

@@ -53,6 +53,36 @@ def build_training_row(dico_logs_: dict, training_cols: list) -> list:
     return [dico_logs_.get(_TRAINING_COL_TO_KEY.get(col, col), "") for col in training_cols]
 
 
+def compute_metrics_bce(pred):
+    labels = pred.label_ids
+    sigmoid_out = expit(pred.predictions)
+    raw_preds = (sigmoid_out > 0.5).sum(axis=1) - 1
+    preds = np.clip(raw_preds, 0, sigmoid_out.shape[1] - 1)
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels, preds, average='weighted')
+    acc_labels = accuracy_score(labels, preds)
+    cm_labels = confusion_matrix(y_true=labels, y_pred=preds)
+
+    distances = [dist_matrix[preds[k]][labels[k]] for k in range(len(preds))]
+    cnt = Counter(distances)
+
+    dico_logs_["labels-accuracy"] = round(acc_labels, 4)
+    dico_logs_["labels-precision"] = round(precision, 4)
+    dico_logs_["labels-recall"] = round(recall, 4)
+    dico_logs_["labels-f1_score"] = round(f1, 4)
+    dico_logs_["labels-confusion_matrix"] = cm_labels
+
+    for k in np.sort(list(cnt.keys()))[1:]:
+        dico_logs_[f"distance_{k}"] = round(cnt[k] / len(preds), 4)
+
+    acc = acc_labels
+    for k in np.sort(list(cnt.keys()))[1:-1]:
+        acc += cnt[k] / len(preds)
+        dico_logs_[f"off-by-{k}-accuracy"] = round(acc, 4)
+
+    return {k: v for k, v in dico_logs_.items() if k != "labels-confusion_matrix"}
+
+
 def compute_metrics_coral(pred):
     labels = pred.label_ids
     preds = (np.column_stack((np.zeros((pred.predictions.shape[0], 1)), expit(
@@ -296,7 +326,12 @@ if __name__ == '__main__':
                     )
 
                     loss_function = losses_dict[loss_type]
-                    eval_function = compute_metrics_coral if loss_type == "CORAL" else compute_metrics
+                    if loss_type == "CORAL":
+                        eval_function = compute_metrics_coral
+                    elif loss_type == "BCE":
+                        eval_function = compute_metrics_bce
+                    else:
+                        eval_function = compute_metrics
 
                     trainer = loss_function(
                         model=model,

@@ -1,5 +1,5 @@
 dataset,loss,pretrained_model,trained_model,accuracy,precision,recall,f1_score,distance_1,distance_2,distance_3,distance_4,off-by-1-accuracy,off-by-2-accuracy,off-by-3-accuracy,mae,mse,kendalltau,distrib-0,distrib-1,distrib-2,distrib-3,distrib-4
-yelp,CE,google/bert-tiny,bert_uncased_L-2_H-128_A-2-yelp-BCE-1_34_ep_0.0001_lr_1024_batch,0.1999,0.047,0.1999,0.076,0.2019,0.2341,0.2743,0.0898,0.4018,0.6359,0.9102,1.85216,5.04368,0.45383641715102213,42693,7199,107,1,
+yelp,BCE,google/bert-tiny,bert_uncased_L-2_H-128_A-2-yelp-BCE-1_34_ep_0.0001_lr_1024_batch,0.1999,0.047,0.1999,0.076,0.2019,0.2341,0.2743,0.0898,0.4018,0.6359,0.9102,1.85216,5.04368,0.45383641715102213,42693,7199,107,1,
 yelp,CE,google/bert-tiny,bert_uncased_L-2_H-128_A-2-yelp-CE-1_34_ep_0.0001_lr_1024_batch,0.5915,0.5946,0.5915,0.5927,0.3459,0.0429,0.0124,0.0073,0.9375,0.9803,0.9927,0.49796,0.74548,0.7319983370885623,9279,10157,9664,10741,10159
 yelp,CORAL,google/bert-tiny,bert_uncased_L-2_H-128_A-2-yelp-CORAL-1_34_ep_0.0001_lr_1024_batch,0.4936,0.4677,0.4936,0.4,0.3865,0.0975,0.0146,0.0078,0.8802,0.9777,0.9922,0.65626,1.03174,0.7197144786026883,18140,1253,11674,1306,17627
 yelp,EMD,google/bert-tiny,bert_uncased_L-2_H-128_A-2-yelp-EMD-1_34_ep_0.0001_lr_1024_batch,0.5904,0.5886,0.5904,0.5894,0.3482,0.044,0.0109,0.0065,0.9386,0.9826,0.9935,0.49486,0.72594,0.7375171773974332,10294,9857,9816,9866,10167
