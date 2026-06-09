@@ -1,5 +1,4 @@
 dataset,loss,pretrained_model,trained_model,accuracy,precision,recall,f1_score,distance_1,distance_2,off-by-1-accuracy,mae,mse,kendalltau,distrib-0,distrib-1,distrib-2
-snli,BCE,google/bert-tiny,bert_uncased_L-2_H-128_A-2-snli-BCE-1_36_ep_0.0001_lr_1024_batch,0.3428,0.1177,0.3428,0.1753,0.3294,0.3278,0.6722,0.9849348534201955,1.640472312703583,0.048357179364540225,9807,17,
 snli,CE,google/bert-tiny,bert_uncased_L-2_H-128_A-2-snli-CE-1_36_ep_0.0001_lr_1024_batch,0.8356,0.8354,0.8356,0.8354,0.141,0.0234,0.9766,0.18780537459283386,0.23462947882736157,0.796612143417612,3459,3198,3167
 snli,CORAL,google/bert-tiny,bert_uncased_L-2_H-128_A-2-snli-CORAL-1_36_ep_0.0001_lr_1024_batch,0.8293,0.8288,0.8293,0.829,0.1537,0.017,0.983,0.18770358306188925,0.22170195439739412,0.8033064265754831,3430,3167,3227
 snli,EMD,google/bert-tiny,bert_uncased_L-2_H-128_A-2-snli-EMD-1_36_ep_0.0001_lr_1024_batch,0.8372,0.8373,0.8372,0.8372,0.1421,0.0207,0.9793,0.18342833876221498,0.2247557003257329,0.802986211601539,3387,3229,3208

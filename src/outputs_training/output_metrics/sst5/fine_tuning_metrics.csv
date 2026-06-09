@@ -1,6 +1,5 @@
 model_name,epochs,learning_rate,train_batch_size,accuracy,precision,recall,f1_score,distance_1,distance_2,distance_3,distance_4,off-by-1-accuracy,off-by-2-accuracy,off-by-3-accuracy
 google/bert_uncased_L-2_H-128_A-2-sst5-CE-1,2340,0.0001,1024,0.4124,0.3723,0.4124,0.342,0.4314,0.1272,0.0272,0.0018,0.8438,0.9709,0.9982
-google/bert_uncased_L-2_H-128_A-2-sst5-BCE-1,2340,0.0001,1024,0.1571,0.0732,0.1571,0.0777,0.3742,0.2934,0.139,0.0363,0.5313,0.8247,0.9637
 google/bert_uncased_L-2_H-128_A-2-sst5-OLL1-1,2340,0.0001,1024,0.4214,0.4356,0.4214,0.4049,0.4469,0.1126,0.0182,0.0009,0.8683,0.9809,0.9991
 google/bert_uncased_L-2_H-128_A-2-sst5-OLL15-1,2340,0.0001,1024,0.4142,0.4332,0.4142,0.3835,0.4514,0.1172,0.0173,0.0018,0.8656,0.9827,0.9982
 google/bert_uncased_L-2_H-128_A-2-sst5-OLL2-1,2340,0.0001,1024,0.4024,0.3697,0.4024,0.3543,0.465,0.1135,0.0191,0.0009,0.8674,0.9809,0.9991
