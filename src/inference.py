@@ -123,8 +123,7 @@ def parse_args():
     )
     parser.add_argument(
         "--datasets", nargs="+",
-        # "amazon_reviews" excluded: HuggingFace dataset 'amazon_reviews_multi' is defunct.
-        default=["snli", "sst5", "yelp"],
+        default=["amazon_reviews", "snli", "sst5", "yelp"],
         choices=["amazon_reviews", "snli", "sst5", "yelp"],
         help="Datasets to evaluate (default: all available).",
     )

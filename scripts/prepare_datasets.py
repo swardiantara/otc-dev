@@ -2,7 +2,7 @@
 Download and prepare the four benchmark datasets for ordinal text classification.
 
 Datasets downloaded from Hugging Face:
-  - amazon_reviews  -> amazon_reviews_multi (English)
+  - amazon_reviews  -> SetFit/amazon_reviews_multi_en
   - snli            -> snli
   - sst5            -> SetFit/sst5
   - yelp            -> yelp_review_full
@@ -39,16 +39,15 @@ def prepare_amazon_reviews(data_dir: Path, overwrite: bool) -> bool:
         print("  amazon_reviews: already prepared, skipping (use --overwrite to redo).")
         return False
 
-    print("  Downloading amazon_reviews_multi (en) ...")
-    ds = load_dataset("amazon_reviews_multi", "en", trust_remote_code=True)
+    print("  Downloading SetFit/amazon_reviews_multi_en ...")
+    ds = load_dataset("SetFit/amazon_reviews_multi_en", trust_remote_code=True)
 
     out.mkdir(parents=True, exist_ok=True)
     splits = {"train": "train", "validation": "validation", "test": "test"}
     for split_name, hf_split in splits.items():
         df = pd.DataFrame({
-            "text": ds[hf_split]["review_body"],
-            # stars are 1-5; convert to 0-indexed labels
-            "label": [s - 1 for s in ds[hf_split]["stars"]],
+            "text": ds[hf_split]["text"],
+            "label": ds[hf_split]["label"],
         })
         df = _clean_df(df, ["text"], split_name)
         path = out / f"amazon_reviews_{split_name}.csv"
@@ -204,10 +203,7 @@ def update_datasets_json(data_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 PREPARERS = {
-    # "amazon_reviews" excluded: HuggingFace dataset 'amazon_reviews_multi' is defunct
-    # (DefunctDatasetError). The prepare_amazon_reviews() function above is kept so it
-    # can be re-enabled once an alternative source is found.
-    # "amazon_reviews": prepare_amazon_reviews,
+    "amazon_reviews": prepare_amazon_reviews,
     "snli": prepare_snli,
     "sst5": prepare_sst5,
     "yelp": prepare_yelp,
