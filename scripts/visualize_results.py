@@ -2,12 +2,13 @@
 Generate comparison plots from test-set metrics.
 
 Produces (saved under results/figures/):
-  - bar_<metric>.png      : grouped bar chart per dataset for each metric
-  - heatmap_<metric>.png  : loss × dataset heatmap for each metric
+  - bar_<metric>.pdf      : grouped bar chart per dataset for each metric
+  - heatmap_<metric>.pdf  : loss × dataset heatmap (mean ± std) for each metric
+  - average_rank.pdf      : average rank comparison across datasets and metrics
 
 Usage:
     python -m scripts.visualize_results
-    python -m scripts.visualize_results --metrics accuracy mae --datasets sst5 yelp
+    python -m scripts.visualize_results --metrics mae mse --datasets sst5 yelp
     python -m scripts.visualize_results --output_dir results/my_figures
 """
 
@@ -22,10 +23,15 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-# Re-use helpers from analyze_results
 from scripts.analyze_results import (
-    load_metrics, extract_run_info, best_per_loss, LOSS_ORDER,
+    load_metrics,
+    extract_run_info,
+    compute_mean_std,
+    compute_ranks,
+    LOSS_ORDER,
     DEFAULT_METRICS_DIR,
+    ANALYSIS_METRICS,
+    LOWER_IS_BETTER,
 )
 
 ROOT_PATH = Path(__file__).parent.parent
@@ -39,26 +45,37 @@ METRIC_LABELS = {
     "mae": "MAE",
     "mse": "MSE",
     "kendalltau": "Kendall's τ",
-    "off-by-1-accuracy": "Off-by-1 Accuracy",
+    "off-by-1-accuracy": "OB1",
+    "off-by-2-accuracy": "OB2",
 }
-
-# Metrics where lower = better (affects heatmap colour direction)
-LOWER_IS_BETTER = {"mae", "mse"}
 
 
 # ---------------------------------------------------------------------------
 # Plotting functions
 # ---------------------------------------------------------------------------
 
-def grouped_bar(best: pd.DataFrame, metric: str, datasets: list, output_dir: Path) -> None:
-    """One group of bars per dataset, one bar per loss function."""
-    sub = best[best["dataset"].isin(datasets)][["dataset", "loss", metric]].copy()
-    sub[metric] = pd.to_numeric(sub[metric], errors="coerce")
-    pivot = sub.pivot(index="loss", columns="dataset", values=metric)
+def _ordered_losses(index):
+    present = [l for l in LOSS_ORDER if l in index]
+    extra = [l for l in index if l not in LOSS_ORDER]
+    return present + extra
 
-    present_losses = [l for l in LOSS_ORDER if l in pivot.index]
-    present_datasets = [d for d in DATASET_ORDER if d in pivot.columns]
-    pivot = pivot.loc[present_losses, present_datasets]
+
+def grouped_bar(agg: pd.DataFrame, metric: str, datasets: list, output_dir: Path) -> None:
+    """One group of bars per dataset, one bar per loss function (using mean scores)."""
+    mean_col = f"{metric}_mean"
+    std_col = f"{metric}_std"
+    if mean_col not in agg.columns:
+        print(f"  Skipping bar for '{metric}' — mean column not found.")
+        return
+
+    sub = agg[agg["dataset"].isin(datasets)][["dataset", "loss", mean_col, std_col]].copy()
+    pivot_mean = sub.pivot(index="loss", columns="dataset", values=mean_col)
+    pivot_std = sub.pivot(index="loss", columns="dataset", values=std_col)
+
+    present_losses = _ordered_losses(pivot_mean.index)
+    present_datasets = [d for d in DATASET_ORDER if d in pivot_mean.columns]
+    pivot_mean = pivot_mean.loc[present_losses, present_datasets]
+    pivot_std = pivot_std.loc[present_losses, present_datasets]
 
     n_losses = len(present_losses)
     n_datasets = len(present_datasets)
@@ -70,8 +87,10 @@ def grouped_bar(best: pd.DataFrame, metric: str, datasets: list, output_dir: Pat
 
     for i, dataset in enumerate(present_datasets):
         offset = (i - n_datasets / 2 + 0.5) * width
-        vals = pivot[dataset].values
-        bars = ax.bar(x + offset, vals, width * 0.9, label=dataset, color=palette[i])
+        vals = pivot_mean[dataset].values
+        errs = pivot_std[dataset].fillna(0).values
+        ax.bar(x + offset, vals, width * 0.9, yerr=errs, capsize=3,
+               label=dataset, color=palette[i])
 
     ax.set_xticks(x)
     ax.set_xticklabels(present_losses, fontsize=9)
@@ -81,67 +100,72 @@ def grouped_bar(best: pd.DataFrame, metric: str, datasets: list, output_dir: Pat
     ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.3f"))
     fig.tight_layout()
 
-    out_path = output_dir / f"bar_{metric}.png"
-    fig.savefig(out_path, dpi=150)
+    out_path = output_dir / f"bar_{metric}.pdf"
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  Saved {out_path.relative_to(ROOT_PATH)}")
 
 
-def heatmap(best: pd.DataFrame, metric: str, datasets: list, output_dir: Path) -> None:
-    """Loss × Dataset heatmap."""
-    sub = best[best["dataset"].isin(datasets)][["dataset", "loss", metric]].copy()
-    sub[metric] = pd.to_numeric(sub[metric], errors="coerce")
-    pivot = sub.pivot(index="loss", columns="dataset", values=metric)
+def heatmap(agg: pd.DataFrame, metric: str, datasets: list, output_dir: Path) -> None:
+    """Loss × Dataset heatmap with mean ± std annotations."""
+    mean_col = f"{metric}_mean"
+    std_col = f"{metric}_std"
+    if mean_col not in agg.columns:
+        print(f"  Skipping heatmap for '{metric}' — mean column not found.")
+        return
 
-    present_losses = [l for l in LOSS_ORDER if l in pivot.index]
-    present_datasets = [d for d in DATASET_ORDER if d in pivot.columns]
-    pivot = pivot.loc[present_losses, present_datasets].astype(float)
+    sub = agg[agg["dataset"].isin(datasets)][["dataset", "loss", mean_col, std_col]].copy()
+    pivot_mean = sub.pivot(index="loss", columns="dataset", values=mean_col)
+    pivot_std = sub.pivot(index="loss", columns="dataset", values=std_col)
 
-    fig, ax = plt.subplots(figsize=(max(6, len(present_datasets) * 1.8), max(4, len(present_losses) * 0.7)))
+    present_losses = _ordered_losses(pivot_mean.index)
+    present_datasets = [d for d in DATASET_ORDER if d in pivot_mean.columns]
+    pivot_mean = pivot_mean.loc[present_losses, present_datasets].astype(float)
+    pivot_std = pivot_std.loc[present_losses, present_datasets].astype(float)
 
+    # Build annotation strings: "mean\n±std"
+    annot = pd.DataFrame(index=pivot_mean.index, columns=pivot_mean.columns)
+    for loss in pivot_mean.index:
+        for ds in pivot_mean.columns:
+            m = pivot_mean.loc[loss, ds]
+            s = pivot_std.loc[loss, ds]
+            if pd.isna(m):
+                annot.loc[loss, ds] = "N/A"
+            elif pd.isna(s) or s == 0:
+                annot.loc[loss, ds] = f"{m:.3f}"
+            else:
+                annot.loc[loss, ds] = f"{m:.3f}\n±{s:.3f}"
+
+    fig, ax = plt.subplots(
+        figsize=(max(6, len(present_datasets) * 2.2), max(4, len(present_losses) * 0.85))
+    )
     cmap = "RdYlGn_r" if metric in LOWER_IS_BETTER else "RdYlGn"
+
     sns.heatmap(
-        pivot, ax=ax, cmap=cmap, annot=True, fmt=".3f",
+        pivot_mean, ax=ax, cmap=cmap, annot=annot.values, fmt="",
         linewidths=0.5, linecolor="white",
         cbar_kws={"label": METRIC_LABELS.get(metric, metric)},
+        annot_kws={"size": 8},
     )
-    ax.set_title(f"{METRIC_LABELS.get(metric, metric)} — Loss × Dataset")
+    ax.set_title(f"{METRIC_LABELS.get(metric, metric)} — Loss × Dataset (mean ± std)")
     ax.set_xlabel("Dataset")
     ax.set_ylabel("Loss Function")
     fig.tight_layout()
 
-    out_path = output_dir / f"heatmap_{metric}.png"
-    fig.savefig(out_path, dpi=150)
+    out_path = output_dir / f"heatmap_{metric}.pdf"
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  Saved {out_path.relative_to(ROOT_PATH)}")
 
 
-def rank_plot(best: pd.DataFrame, metrics: list, datasets: list, output_dir: Path) -> None:
+def rank_plot(agg: pd.DataFrame, metrics: list, datasets: list, output_dir: Path) -> None:
     """Average rank of each loss across datasets and metrics (lower = better overall)."""
-    sub = best[best["dataset"].isin(datasets)].copy()
-
-    rank_frames = []
-    for metric in metrics:
-        if metric not in sub.columns:
-            continue
-        sub[metric] = pd.to_numeric(sub[metric], errors="coerce")
-        ascending = metric in LOWER_IS_BETTER
-        ranked = (
-            sub.groupby("dataset")[["loss", metric]]
-            .apply(lambda g: g.set_index("loss")[metric].rank(ascending=ascending))
-            .reset_index()
-            .melt(id_vars="dataset", var_name="loss", value_name="rank")
-        )
-        ranked["metric"] = metric
-        rank_frames.append(ranked)
-
-    if not rank_frames:
+    ranks = compute_ranks(agg, metrics)
+    if ranks.empty:
         return
 
-    all_ranks = pd.concat(rank_frames)
-    mean_ranks = all_ranks.groupby("loss")["rank"].mean().sort_values()
-
-    present_losses = [l for l in LOSS_ORDER if l in mean_ranks.index]
+    mean_ranks = ranks.groupby("loss")["rank"].mean().sort_values()
+    present_losses = _ordered_losses(mean_ranks.index)
     extra = [l for l in mean_ranks.index if l not in LOSS_ORDER]
     mean_ranks = mean_ranks.loc[present_losses + extra]
 
@@ -154,8 +178,8 @@ def rank_plot(best: pd.DataFrame, metrics: list, datasets: list, output_dir: Pat
     ax.legend()
     fig.tight_layout()
 
-    out_path = output_dir / "average_rank.png"
-    fig.savefig(out_path, dpi=150)
+    out_path = output_dir / "average_rank.pdf"
+    fig.savefig(out_path)
     plt.close(fig)
     print(f"  Saved {out_path.relative_to(ROOT_PATH)}")
 
@@ -177,17 +201,8 @@ def parse_args():
         help="Datasets to include.",
     )
     parser.add_argument(
-        "--metrics", nargs="+",
-        default=["accuracy", "mae", "mse", "kendalltau", "off-by-1-accuracy"],
+        "--metrics", nargs="+", default=ANALYSIS_METRICS,
         help="Metrics to plot.",
-    )
-    parser.add_argument(
-        "--sort_metric", default="accuracy",
-        help="Metric used to pick best run per (dataset, loss) (default: accuracy).",
-    )
-    parser.add_argument(
-        "--lower_is_better", action="store_true",
-        help="Sort metric is better when lower (e.g. mae).",
     )
     parser.add_argument(
         "--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR,
@@ -205,7 +220,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if not args.metrics_dir:
+    if not args.metrics_dir.exists():
         print(f"ERROR: {args.metrics_dir} not found. Run inference.py first.")
         raise SystemExit(1)
 
@@ -213,21 +228,20 @@ def main():
 
     df = load_metrics(args.metrics_dir, args.datasets)
     df = extract_run_info(df)
-    higher = not args.lower_is_better
-    best = best_per_loss(df, args.sort_metric, higher_is_better=higher)
+    agg = compute_mean_std(df, args.metrics)
 
     print(f"Generating figures for metrics: {args.metrics}")
 
     for metric in args.metrics:
-        if metric not in best.columns:
+        if f"{metric}_mean" not in agg.columns:
             print(f"  Skipping '{metric}' — not in results.")
             continue
         if not args.no_bar:
-            grouped_bar(best, metric, args.datasets, args.output_dir)
+            grouped_bar(agg, metric, args.datasets, args.output_dir)
         if not args.no_heatmap:
-            heatmap(best, metric, args.datasets, args.output_dir)
+            heatmap(agg, metric, args.datasets, args.output_dir)
 
-    rank_plot(best, args.metrics, args.datasets, args.output_dir)
+    rank_plot(agg, args.metrics, args.datasets, args.output_dir)
     print(f"\nAll figures saved to {args.output_dir}")
 
 
