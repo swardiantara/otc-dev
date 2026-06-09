@@ -57,7 +57,7 @@ python -m src.inference --datasets $DATASETS
 # ── Step 5: Analysis & Visualisation ────────────────────────
 echo ""
 echo "[5/5] Generating analysis and figures ..."
-python -m scripts.analyze_results  --datasets $DATASETS --output_csv results/summary.csv
+python -m scripts.analyze_results  --datasets $DATASETS --output results/summary.csv
 python -m scripts.visualize_results --datasets $DATASETS
 
 echo ""
