@@ -32,7 +32,7 @@ ROOT_PATH = Path(__file__).parent.parent
 DEFAULT_OUTPUT_DIR = ROOT_PATH / "results" / "figures"
 
 # "amazon_reviews" excluded from defaults; kept in list so plots work if re-added later.
-DATASET_ORDER = ["sst5", "yelp", "snli"]
+DATASET_ORDER = ["snli", "sst5", "yelp"]
 
 METRIC_LABELS = {
     "accuracy": "Accuracy",
@@ -212,7 +212,7 @@ def main():
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_metrics(args.metrics_csv)
+    df = load_metrics(args.metrics_csv, args.datasets)
     df = extract_run_info(df)
     higher = not args.lower_is_better
     best = best_per_loss(df, args.sort_metric, higher_is_better=higher)
