@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 DATASETS="${DATASETS:-amazon_reviews snli sst5 yelp}"
-LOSSES="${LOSSES:-BCE}"
+LOSSES="${LOSSES:-BCE CE OLL1 OLL15 OLL2 CORAL WKL SOFT2 SOFT3 SOFT4 EMD}"
 #  CE OLL1 OLL15 OLL2 CORAL WKL SOFT2 SOFT3 SOFT4 EMD
 LRS="${LRS:-1e-4 1e-5 7.5e-5 5e-5 2.5e-5}"
 # 1e-5 7.5e-5 5e-5 2.5e-5 
