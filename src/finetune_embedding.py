@@ -423,7 +423,7 @@ def main(args):
     )
     api.upload_file(
         path_or_fileobj=str(tsne_png),
-        path_in_repo="tsne_validation.png",
+        path_in_repo="tsne_validation.pdf",
         repo_id=model_hub_id,
         repo_type="model",
     )
