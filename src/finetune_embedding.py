@@ -6,17 +6,19 @@ import math
 import tempfile
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_dataset, Dataset
-from huggingface_hub import HfApi, create_repo
+from huggingface_hub import HfApi
 from sentence_transformers import SentenceTransformer, models
 from sentence_transformers import SentenceTransformerTrainer
 from sentence_transformers.evaluation import SentenceEvaluator
 from sentence_transformers.training_args import SentenceTransformerTrainingArguments
 from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 from sklearn.metrics import pairwise_distances
 from sklearn.neighbors import NearestNeighbors
 
@@ -27,31 +29,35 @@ ROOT_PATH = Path(__file__).parent.parent
 
 
 # ==========================================
-# 1. Custom Evaluator: NOS (Neighborhood Ordinal Smoothness)
+# 1. NOS (Neighborhood Ordinal Smoothness) — shared computation
 # ==========================================
+def compute_nos(embeddings, labels, k_values=[1, 3, 5, 10], metric='cosine'):
+    labels = np.array(labels)
+    max_k = max(k_values)
+    nbrs = NearestNeighbors(n_neighbors=max_k + 1, metric=metric).fit(embeddings)
+    _, indices = nbrs.kneighbors(embeddings)
+    scores = {}
+    for k in k_values:
+        neighbor_labels = labels[indices[:, 1:k+1]]
+        scores[f"NOS_{k}"] = float(np.mean(np.abs(labels[:, None] - neighbor_labels)))
+    scores["NOS_avg"] = float(np.mean([scores[f"NOS_{k}"] for k in k_values]))
+    return scores
+
+
 class NOSEvaluator(SentenceEvaluator):
-    def __init__(self, sentences, labels, k_values=[1, 3, 5, 10], name="val"):
+    def __init__(self, sentences, labels, k_values=[1, 3, 5, 10], metric='cosine', name="val"):
         self.sentences = sentences
         self.labels = np.array(labels)
         self.k_values = k_values
+        self.metric = metric
         self.name = name
 
     def __call__(self, model, output_path=None, epoch=-1, steps=-1):
         logger.info(f"Running NOS Evaluation (epoch={epoch})")
         embeddings = model.encode(self.sentences, convert_to_numpy=True, show_progress_bar=False)
-
-        max_k = max(self.k_values)
-        nbrs = NearestNeighbors(n_neighbors=max_k + 1, metric='cosine').fit(embeddings)
-        _, indices = nbrs.kneighbors(embeddings)
-
-        nos_scores = {}
-        for k in self.k_values:
-            neighbor_labels = self.labels[indices[:, 1:k+1]]
-            nos_scores[f"NOS_{k}"] = float(np.mean(np.abs(self.labels[:, None] - neighbor_labels)))
-        nos_scores["NOS_avg"] = float(np.mean([nos_scores[f"NOS_{k}"] for k in self.k_values]))
-
+        nos_scores = compute_nos(embeddings, self.labels, self.k_values, self.metric)
         logger.info(f"NOS: {nos_scores}")
-        # All scores are logged; NOS_avg is used as the checkpointing criterion via metric_for_best_model
+        # All scores are logged; NOS_avg is the checkpointing criterion via metric_for_best_model
         return {f"{self.name}_{key}": val for key, val in nos_scores.items()}
 
 
@@ -114,27 +120,27 @@ def load_split(dataset_name, split, datasets_config):
 # ==========================================
 # 4. Proxy Selection & Pair Construction
 # ==========================================
-def _select_proxies(embeddings, class_indices, k_proxies):
+def _select_proxies(embeddings, class_indices, k_proxies, metric='cosine'):
     """Return k_proxies medoid indices (into the original embeddings array)."""
     c_emb = embeddings[class_indices]
     if k_proxies == 1:
         centroid = c_emb.mean(axis=0, keepdims=True)
-        dists = pairwise_distances(c_emb, centroid, metric='cosine')
+        dists = pairwise_distances(c_emb, centroid, metric=metric)
         return [class_indices[int(np.argmin(dists))]]
     kmeans = KMeans(n_clusters=k_proxies, random_state=42, n_init=10).fit(c_emb)
     proxies = []
     for center in kmeans.cluster_centers_:
-        dists = pairwise_distances(c_emb, center.reshape(1, -1), metric='cosine')
+        dists = pairwise_distances(c_emb, center.reshape(1, -1), metric=metric)
         proxies.append(class_indices[int(np.argmin(dists))])
     return proxies
 
 
-def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff):
+def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff, metric='cosine'):
     labels_arr = np.array(labels)
     texts = list(texts)
 
     class_proxies = {
-        int(c): _select_proxies(embeddings, np.where(labels_arr == c)[0], k_proxies)
+        int(c): _select_proxies(embeddings, np.where(labels_arr == c)[0], k_proxies, metric)
         for c in np.unique(labels_arr)
     }
 
@@ -148,7 +154,7 @@ def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff):
         if k_proxies == 1:
             proxy_idx = own_proxies[0]
         else:
-            dists = pairwise_distances(embeddings[i:i+1], embeddings[own_proxies], metric='cosine')
+            dists = pairwise_distances(embeddings[i:i+1], embeddings[own_proxies], metric=metric)
             proxy_idx = own_proxies[int(np.argmin(dists))]
         pairs["text_a"].append(texts[i])
         pairs["text_b"].append(texts[proxy_idx])
@@ -180,10 +186,10 @@ def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff):
 # ==========================================
 # 5. kNN-MAE (parameter-free ordinal classifier evaluation)
 # ==========================================
-def compute_knn_mae(embeddings, labels, k_values=[1, 3, 5, 10]):
+def compute_knn_mae(embeddings, labels, k_values=[1, 3, 5, 10], metric='cosine'):
     labels = np.array(labels)
     max_k = max(k_values)
-    nbrs = NearestNeighbors(n_neighbors=max_k + 1, metric='cosine').fit(embeddings)
+    nbrs = NearestNeighbors(n_neighbors=max_k + 1, metric=metric).fit(embeddings)
     _, indices = nbrs.kneighbors(embeddings)
 
     scores = {}
@@ -196,7 +202,69 @@ def compute_knn_mae(embeddings, labels, k_values=[1, 3, 5, 10]):
 
 
 # ==========================================
-# 6. Cosine → Euclidean margin conversion
+# 6. t-SNE validation-set visualization
+# ==========================================
+def plot_tsne(embeddings, labels, model_id, save_path, metric='cosine', max_samples=5000):
+    """Project validation embeddings to 2-D with t-SNE and save a scatter plot.
+
+    Large datasets are stratified-subsampled to max_samples before running t-SNE
+    so that runtime stays reasonable regardless of validation-set size.
+    The distance metric matches the one used during fine-tuning.
+    """
+    labels = np.array(labels)
+    unique_labels = sorted(np.unique(labels))
+    n_classes = len(unique_labels)
+
+    # Stratified subsample: keep up to max_samples // n_classes points per class
+    if len(embeddings) > max_samples:
+        n_per_class = max_samples // n_classes
+        rng = np.random.RandomState(42)
+        keep = []
+        for c in unique_labels:
+            idx = np.where(labels == c)[0]
+            keep.append(rng.choice(idx, min(n_per_class, len(idx)), replace=False))
+        keep = np.concatenate(keep)
+        embeddings, labels = embeddings[keep], labels[keep]
+        logger.info(f"t-SNE subsampled to {len(embeddings)} points ({n_per_class} per class)")
+
+    perplexity = min(30, max(5, len(embeddings) // 100))
+    logger.info(f"Running t-SNE (n={len(embeddings)}, perplexity={perplexity}, metric={metric})...")
+    embs_2d = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        n_iter=1000,
+        metric=metric,
+        init='pca',
+        random_state=42,
+    ).fit_transform(embeddings)
+
+    # Sequential colormap so ordinal distance is visually encoded
+    cmap = plt.cm.get_cmap('viridis', n_classes)
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    for i, lbl in enumerate(unique_labels):
+        mask = labels == lbl
+        ax.scatter(
+            embs_2d[mask, 0], embs_2d[mask, 1],
+            color=cmap(i),
+            label=f"Class {lbl}",
+            alpha=0.5,
+            s=8,
+            linewidths=0,
+        )
+
+    ax.legend(title="Label", loc='best', markerscale=2.5, fontsize=9)
+    ax.set_title(f"t-SNE  |  {model_id}", fontsize=10)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    logger.info(f"t-SNE plot saved to {save_path}")
+
+
+# ==========================================
+# 7. Cosine → Euclidean margin conversion
 # ==========================================
 def cosine_to_euclidean_margin(cosine_margin: float) -> float:
     """Convert a margin expressed in cosine-distance space to the equivalent
@@ -251,11 +319,15 @@ def main(args):
 
     logger.info(f"Building training pairs (k_proxies={args.k_proxies})...")
     train_dataset = build_pairs(
-        train_texts, train_labels, train_embeddings, args.k_proxies, max_label_diff
+        train_texts, train_labels, train_embeddings, args.k_proxies, max_label_diff,
+        metric=args.distance_metric,
     )
 
     k_values = [1, 3, 5, 10]
-    evaluator = NOSEvaluator(list(val_texts), list(val_labels), k_values=k_values, name="val")
+    evaluator = NOSEvaluator(
+        list(val_texts), list(val_labels),
+        k_values=k_values, metric=args.distance_metric, name="val",
+    )
     loss = OrdinalProxyContrastiveLoss(
         model=model,
         margin_type=args.margin_type,
@@ -280,8 +352,6 @@ def main(args):
         ) from e
 
     model_hub_id = f"{hf_username}/{model_id}"
-    logger.info(f"Creating HuggingFace repo: {model_hub_id}")
-    create_repo(model_hub_id, repo_type="model", exist_ok=True)
 
     # Checkpoints are written to a temp dir and discarded after training;
     # the best weights live in HuggingFace, not on local disk.
@@ -319,17 +389,8 @@ def main(args):
     )
     val_labels_arr = np.array(list(val_labels))
 
-    max_k = max(k_values)
-    nbrs = NearestNeighbors(n_neighbors=max_k + 1, metric='cosine').fit(val_embs)
-    _, indices = nbrs.kneighbors(val_embs)
-
-    final_nos = {}
-    for k in k_values:
-        neighbor_labels = val_labels_arr[indices[:, 1:k+1]]
-        final_nos[f"NOS_{k}"] = float(np.mean(np.abs(val_labels_arr[:, None] - neighbor_labels)))
-    final_nos["NOS_avg"] = float(np.mean([final_nos[f"NOS_{k}"] for k in k_values]))
-
-    knn_mae = compute_knn_mae(val_embs, val_labels_arr, k_values=k_values)
+    final_nos = compute_nos(val_embs, val_labels_arr, k_values, metric=args.distance_metric)
+    knn_mae = compute_knn_mae(val_embs, val_labels_arr, k_values, metric=args.distance_metric)
 
     all_metrics = {**final_nos, **knn_mae}
     logger.info(f"Final validation metrics: {all_metrics}")
@@ -346,12 +407,23 @@ def main(args):
         writer.writerow(all_metrics)
     logger.info(f"Metrics saved to {metrics_csv}")
 
-    # Push model weights and metrics CSV to HuggingFace
+    tsne_png = metrics_dir / f"{model_id}_tsne.pdf"
+    plot_tsne(val_embs, val_labels_arr, model_id, tsne_png, metric=args.distance_metric)
+
+    # Push model weights and metrics CSV to HuggingFace.
+    # exist_ok=True handles both first-time repo creation and re-pushes cleanly,
+    # without triggering a duplicate-repo error from an earlier create_repo call.
     logger.info(f"Pushing model to Hub: {model_hub_id}")
-    model.push_to_hub(model_hub_id)
+    model.push_to_hub(model_hub_id, exist_ok=True)
     api.upload_file(
         path_or_fileobj=str(metrics_csv),
         path_in_repo="contrastive_metrics.csv",
+        repo_id=model_hub_id,
+        repo_type="model",
+    )
+    api.upload_file(
+        path_or_fileobj=str(tsne_png),
+        path_in_repo="tsne_validation.png",
         repo_id=model_hub_id,
         repo_type="model",
     )
