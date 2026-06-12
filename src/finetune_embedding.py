@@ -13,10 +13,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_dataset, Dataset
 from huggingface_hub import HfApi
-from sentence_transformers import SentenceTransformer, models
-from sentence_transformers import SentenceTransformerTrainer
+# from sentence_transformers import SentenceTransformer, models
+from sentence_transformers.sentence_transformer.modules import SentenceTransformer, models
+# from sentence_transformers import SentenceTransformerTrainer
 from sentence_transformers.evaluation import SentenceEvaluator
-from sentence_transformers.training_args import SentenceTransformerTrainingArguments
+from sentence_transformers.sentence_transformer.evaluation import SentenceEvaluator
+# from sentence_transformers.training_args import SentenceTransformerTrainingArguments
+from sentence_transformers.sentence_transformer.training_args import SentenceTransformerTrainingArguments
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
 from sklearn.metrics import pairwise_distances
@@ -309,7 +312,7 @@ def main(args):
 
     logger.info("Initializing model...")
     word_emb = models.Transformer(args.model_name, max_seq_length=128)
-    pooling = models.Pooling(word_emb.get_word_embedding_dimension(), pooling_mode='mean')
+    pooling = models.Pooling(word_emb.get_embedding_dimension(), pooling_mode='mean')
     model = SentenceTransformer(modules=[word_emb, pooling])
 
     logger.info("Computing initial embeddings for proxy selection...")
