@@ -309,6 +309,10 @@ def main(args):
     logger.info("Loading datasets from local CSVs...")
     train_texts, train_labels = load_split(args.dataset, "train", datasets_config)
     val_texts, val_labels = load_split(args.dataset, "validation", datasets_config)
+    logger.info(
+        f"Dataset '{args.dataset}': "
+        f"{len(train_texts)} train samples, {len(val_texts)} validation samples"
+    )
 
     logger.info("Initializing model...")
     word_emb = models.Transformer(args.model_name, max_seq_length=128)
@@ -324,6 +328,12 @@ def main(args):
     train_dataset = build_pairs(
         train_texts, train_labels, train_embeddings, args.k_proxies, max_label_diff,
         metric=args.distance_metric,
+    )
+    steps_per_epoch = -(-len(train_dataset) // args.batch_size)  # ceiling division
+    logger.info(
+        f"Training pairs: {len(train_dataset)} "
+        f"({steps_per_epoch} steps/epoch x {args.epochs} epochs = "
+        f"{steps_per_epoch * args.epochs} total steps)"
     )
 
     k_values = [1, 3, 5, 10]
