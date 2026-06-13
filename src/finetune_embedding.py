@@ -11,12 +11,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, Features, Sequence, Value
 from huggingface_hub import HfApi
-# from sentence_transformers import SentenceTransformer, models
-from sentence_transformers.sentence_transformer.modules import SentenceTransformer, models
-# from sentence_transformers import SentenceTransformerTrainer
-from sentence_transformers.evaluation import SentenceEvaluator
+from transformers import EarlyStoppingCallback
+from sentence_transformers import SentenceTransformer, models
+# from sentence_transformers.sentence_transformer.modules import SentenceTransformer, models
+from sentence_transformers import SentenceTransformerTrainer
+# from sentence_transformers.evaluation import SentenceEvaluator
 from sentence_transformers.sentence_transformer.evaluation import SentenceEvaluator
 # from sentence_transformers.training_args import SentenceTransformerTrainingArguments
 from sentence_transformers.sentence_transformer.training_args import SentenceTransformerTrainingArguments
@@ -48,19 +49,26 @@ def compute_nos(embeddings, labels, k_values=[1, 3, 5, 10], metric='cosine'):
 
 
 class NOSEvaluator(SentenceEvaluator):
-    def __init__(self, sentences, labels, k_values=[1, 3, 5, 10], metric='cosine', name="val"):
+    def __init__(self, sentences, labels, k_values=[1, 3, 5, 10], metric='cosine', name="val",
+                 tsne_epochs=None, model_id=None, save_dir=None):
         self.sentences = sentences
         self.labels = np.array(labels)
         self.k_values = k_values
         self.metric = metric
         self.name = name
+        self.tsne_epochs = set(tsne_epochs) if tsne_epochs else set()
+        self.model_id = model_id
+        self.save_dir = Path(save_dir) if save_dir else None
 
     def __call__(self, model, output_path=None, epoch=-1, steps=-1):
         logger.info(f"Running NOS Evaluation (epoch={epoch})")
         embeddings = model.encode(self.sentences, convert_to_numpy=True, show_progress_bar=False)
         nos_scores = compute_nos(embeddings, self.labels, self.k_values, self.metric)
         logger.info(f"NOS: {nos_scores}")
-        # All scores are logged; NOS_avg is the checkpointing criterion via metric_for_best_model
+        if epoch in self.tsne_epochs and self.save_dir and self.model_id:
+            tsne_path = self.save_dir / f"{self.model_id}_tsne_epoch{epoch}.pdf"
+            plot_tsne(embeddings, self.labels, f"{self.model_id} (epoch {epoch})",
+                      tsne_path, metric=self.metric)
         return {f"{self.name}_{key}": val for key, val in nos_scores.items()}
 
 
@@ -173,6 +181,17 @@ def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff, metric='co
                 pairs["text_b"].append(texts[p_idx])
                 pairs["label"].append([0.0, norm_dist])
 
+    # Cross-class proxy-proxy negative pairs: establish the global ordinal layout in embedding space
+    sorted_classes = sorted(class_proxies.keys())
+    for ci, c1 in enumerate(sorted_classes):
+        for c2 in sorted_classes[ci + 1:]:
+            norm_dist = abs(c1 - c2) / max_label_diff
+            for p1 in class_proxies[c1]:
+                for p2 in class_proxies[c2]:
+                    pairs["text_a"].append(texts[p1])
+                    pairs["text_b"].append(texts[p2])
+                    pairs["label"].append([0.0, norm_dist])
+
     # For k>1: pull sub-cluster proxies of the same class together
     if k_proxies > 1:
         for proxies in class_proxies.values():
@@ -184,6 +203,39 @@ def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff, metric='co
                         pairs["label"].append([1.0, 0.0])
 
     return Dataset.from_dict(pairs)
+
+
+_PAIR_FEATURES = Features({
+    "text_a": Value("string"),
+    "text_b": Value("string"),
+    "label": Sequence(Value("float64"), length=2),
+})
+
+
+def build_full_pairs(texts, labels, max_label_diff):
+    """Exhaustive pairwise construction: all N*(N-1)/2 unique sample pairs.
+
+    Positive if same class; negative (with ordinal margin) if different class.
+    Uses a generator so pairs are written to a memory-mapped Arrow file rather
+    than held in RAM — feasible for SST5 (~36.5 M pairs) but slow for larger sets.
+    """
+    labels_arr = np.array(labels)
+    texts = list(texts)
+    n = len(texts)
+    n_pairs = n * (n - 1) // 2
+    logger.info(f"Full-pair construction: {n} samples → {n_pairs:,} pairs")
+
+    def pair_gen():
+        for i in range(n):
+            for j in range(i + 1, n):
+                li, lj = int(labels_arr[i]), int(labels_arr[j])
+                if li == lj:
+                    yield {"text_a": texts[i], "text_b": texts[j], "label": [1.0, 0.0]}
+                else:
+                    norm_dist = abs(li - lj) / max_label_diff
+                    yield {"text_a": texts[i], "text_b": texts[j], "label": [0.0, norm_dist]}
+
+    return Dataset.from_generator(pair_gen, features=_PAIR_FEATURES)
 
 
 # ==========================================
@@ -241,8 +293,9 @@ def plot_tsne(embeddings, labels, model_id, save_path, metric='cosine', max_samp
         random_state=42,
     ).fit_transform(embeddings)
 
-    # Sequential colormap so ordinal distance is visually encoded
-    cmap = plt.cm.get_cmap('viridis', n_classes)
+    # turbo spans full blue→red spectrum: adjacent classes are visually distinct
+    # while global order (low→high label) is encoded by hue progression
+    cmap = plt.cm.get_cmap('turbo', n_classes)
 
     fig, ax = plt.subplots(figsize=(7, 6))
     for i, lbl in enumerate(unique_labels):
@@ -319,41 +372,12 @@ def main(args):
     pooling = models.Pooling(word_emb.get_embedding_dimension(), pooling_mode='mean')
     model = SentenceTransformer(modules=[word_emb, pooling])
 
-    logger.info("Computing initial embeddings for proxy selection...")
-    train_embeddings = model.encode(
-        train_texts, convert_to_numpy=True, show_progress_bar=True, batch_size=512
-    )
-
-    logger.info(f"Building training pairs (k_proxies={args.k_proxies})...")
-    train_dataset = build_pairs(
-        train_texts, train_labels, train_embeddings, args.k_proxies, max_label_diff,
-        metric=args.distance_metric,
-    )
-    steps_per_epoch = -(-len(train_dataset) // args.batch_size)  # ceiling division
-    logger.info(
-        f"Training pairs: {len(train_dataset)} "
-        f"({steps_per_epoch} steps/epoch x {args.epochs} epochs = "
-        f"{steps_per_epoch * args.epochs} total steps)"
-    )
-
-    k_values = [1, 3, 5, 10]
-    evaluator = NOSEvaluator(
-        list(val_texts), list(val_labels),
-        k_values=k_values, metric=args.distance_metric, name="val",
-    )
-    loss = OrdinalProxyContrastiveLoss(
-        model=model,
-        margin_type=args.margin_type,
-        distance_metric=args.distance_metric,
-        max_margin=args.max_margin,
-        fixed_margin=args.fixed_margin,
-    )
-
-    # model_alias flows into the HuggingFace hub model ID and into training.py's
-    # model_checkpoint argument, so it appears correctly in fine_tuning_metrics.csv
-    # for ablation tracking — no local weight storage is needed.
+    # model_id encodes all hyperparameters; used as HF hub name and CSV filename
     model_alias = args.model_alias or args.model_name.split('/')[-1]
-    model_id = f"{model_alias}-{args.dataset}-k{args.k_proxies}-{args.margin_type}-{args.distance_metric}"
+    if args.pair_mode == 'full':
+        model_id = f"{model_alias}-{args.dataset}-full-{args.margin_type}-{args.distance_metric}"
+    else:
+        model_id = f"{model_alias}-{args.dataset}-k{args.k_proxies}-{args.margin_type}-{args.distance_metric}"
 
     # Resolve HuggingFace username and generate hub model ID from hyperparameters
     api = HfApi()
@@ -363,8 +387,54 @@ def main(args):
         raise RuntimeError(
             "Not logged into HuggingFace. Run `huggingface-cli login` first."
         ) from e
-
     model_hub_id = f"{hf_username}/{model_id}"
+
+    # Create metrics dir before training so the evaluator can write per-epoch t-SNE plots
+    metrics_dir = ROOT_PATH / "results" / "embedding" / args.dataset
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.pair_mode == 'full':
+        logger.info("Building exhaustive sample-sample pairs (full-pair mode)...")
+        train_dataset = build_full_pairs(train_texts, train_labels, max_label_diff)
+    else:
+        logger.info("Computing initial embeddings for proxy selection...")
+        train_embeddings = model.encode(
+            train_texts, convert_to_numpy=True, show_progress_bar=True, batch_size=512
+        )
+        logger.info(f"Building training pairs (k_proxies={args.k_proxies})...")
+        train_dataset = build_pairs(
+            train_texts, train_labels, train_embeddings, args.k_proxies, max_label_diff,
+            metric=args.distance_metric,
+        )
+
+    steps_per_epoch = -(-len(train_dataset) // args.batch_size)  # ceiling division
+    logger.info(
+        f"Training pairs: {len(train_dataset):,} "
+        f"({steps_per_epoch} steps/epoch x {args.epochs} epochs = "
+        f"{steps_per_epoch * args.epochs} total steps)"
+    )
+
+    k_values = [1, 3, 5, 10]
+    evaluator = NOSEvaluator(
+        list(val_texts), list(val_labels),
+        k_values=k_values, metric=args.distance_metric, name="val",
+        tsne_epochs=args.tsne_epochs,
+        model_id=model_id,
+        save_dir=metrics_dir,
+    )
+    loss = OrdinalProxyContrastiveLoss(
+        model=model,
+        margin_type=args.margin_type,
+        distance_metric=args.distance_metric,
+        max_margin=args.max_margin,
+        fixed_margin=args.fixed_margin,
+    )
+
+    callbacks = []
+    if args.early_stopping_patience is not None:
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience
+        ))
 
     # Checkpoints are written to a temp dir and discarded after training;
     # the best weights live in HuggingFace, not on local disk.
@@ -389,6 +459,7 @@ def main(args):
             train_dataset=train_dataset,
             evaluator=evaluator,
             loss=loss,
+            callbacks=callbacks if callbacks else None,
         )
 
         logger.info("Starting contrastive fine-tuning...")
@@ -408,11 +479,7 @@ def main(args):
     all_metrics = {**final_nos, **knn_mae}
     logger.info(f"Final validation metrics: {all_metrics}")
 
-    # Save validation metrics to results/embedding/{dataset}/{model_id}.csv
-    # The filename encodes all hyperparameters; used to pick the best embedding
-    # configuration before the classifier training stage.
-    metrics_dir = ROOT_PATH / "results" / "embedding" / args.dataset
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+    # Save validation metrics; filename encodes all hyperparameters
     metrics_csv = metrics_dir / f"{model_id}.csv"
     with open(metrics_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(all_metrics.keys()))
@@ -420,14 +487,17 @@ def main(args):
         writer.writerow(all_metrics)
     logger.info(f"Metrics saved to {metrics_csv}")
 
-    tsne_png = metrics_dir / f"{model_id}_tsne.pdf"
-    plot_tsne(val_embs, val_labels_arr, model_id, tsne_png, metric=args.distance_metric)
+    tsne_pdf = metrics_dir / f"{model_id}_tsne.pdf"
+    plot_tsne(val_embs, val_labels_arr, model_id, tsne_pdf, metric=args.distance_metric)
 
-    # Push model weights and metrics CSV to HuggingFace.
-    # exist_ok=True handles both first-time repo creation and re-pushes cleanly,
-    # without triggering a duplicate-repo error from an earlier create_repo call.
+    # Delete the existing repo before pushing so the model card is regenerated
+    # from scratch — otherwise only weights/files are updated and the card keeps
+    # stale metadata from the previous run.
     logger.info(f"Pushing model to Hub: {model_hub_id}")
-    model.push_to_hub(model_hub_id, exist_ok=True)
+    if api.repo_exists(repo_id=model_hub_id, repo_type="model"):
+        logger.info(f"Deleting existing repo to regenerate model card: {model_hub_id}")
+        api.delete_repo(repo_id=model_hub_id, repo_type="model")
+    model.push_to_hub(model_hub_id)
     api.upload_file(
         path_or_fileobj=str(metrics_csv),
         path_in_repo="contrastive_metrics.csv",
@@ -435,7 +505,7 @@ def main(args):
         repo_type="model",
     )
     api.upload_file(
-        path_or_fileobj=str(tsne_png),
+        path_or_fileobj=str(tsne_pdf),
         path_in_repo="tsne_validation.pdf",
         repo_id=model_hub_id,
         repo_type="model",
@@ -461,9 +531,17 @@ if __name__ == "__main__":
                         help="Max margin for adaptive setting")
     parser.add_argument("--fixed_margin", type=float, default=0.5,
                         help="Margin for fixed setting")
-    parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--pair_mode", type=str, choices=["proxy", "full"], default="proxy",
+                        help="'proxy': sample→proxy pairs (default); "
+                             "'full': all N*(N-1)/2 sample-sample pairs (suitable for SST5)")
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--learning_rate", type=float, default=2e-5)
+    parser.add_argument("--early_stopping_patience", type=int, default=2,
+                        help="Stop training if NOS_avg does not improve for this many eval epochs")
+    parser.add_argument("--tsne_epochs", type=int, nargs="*", default=[1,3,5,7],
+                        help="Epochs at which to save a t-SNE plot during training "
+                             "(e.g. --tsne_epochs 1 3 5). A final plot is always saved after training.")
 
     args = parser.parse_args()
     main(args)

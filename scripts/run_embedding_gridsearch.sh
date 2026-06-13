@@ -28,9 +28,10 @@ MODEL_NAME="google/bert_uncased_L-2_H-128_A-2"
 MODEL_ALIAS="bert-tiny"
 MAX_MARGIN=1.0      # cosine space; auto-converted when euclidean is used
 FIXED_MARGIN=0.5    # cosine space; auto-converted when euclidean is used
-EPOCHS=3
+EPOCHS=10
 BATCH_SIZE=1024
-LEARNING_RATE="1e-5"
+LEARNING_RATE="2e-5"
+EARLY_STOPPING_PATIENCE=2
 
 # ── Derived paths ────────────────────────────────────────────
 METRICS_BASE="${REPO_ROOT}/results/embedding"
@@ -44,7 +45,7 @@ echo " Datasets  : ${DATASETS}"
 echo " k_proxies : ${K_PROXIES}"
 echo " Margins   : ${MARGIN_TYPES}  (cosine max=${MAX_MARGIN}, fixed=${FIXED_MARGIN})"
 echo " Metrics   : ${DISTANCE_METRICS}"
-echo " Epochs    : ${EPOCHS}  LR: ${LEARNING_RATE}  Batch: ${BATCH_SIZE}"
+echo " Epochs    : ${EPOCHS}  LR: ${LEARNING_RATE}  Batch: ${BATCH_SIZE}  EarlyStop: ${EARLY_STOPPING_PATIENCE}"
 echo "======================================================="
 
 total=0
@@ -84,7 +85,8 @@ for K in $K_PROXIES; do
                     --fixed_margin   "$FIXED_MARGIN" \
                     --epochs         "$EPOCHS" \
                     --batch_size     "$BATCH_SIZE" \
-                    --learning_rate  "$LEARNING_RATE"
+                    --learning_rate  "$LEARNING_RATE" \
+                    --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
 
                 EXIT_CODE=$?
                 if [ $EXIT_CODE -ne 0 ]; then
@@ -99,6 +101,58 @@ for K in $K_PROXIES; do
         done
     done
 done
+
+# ── SST5 full-pair construction (exhaustive sample-sample pairs) ─────────────
+# Runs only after all proxy-based experiments so proxy results are available
+# for direct comparison. k_proxies is irrelevant here (not part of model_id).
+# echo ""
+# echo "======================================================="
+# echo " SST5 full-pair construction"
+# echo "======================================================="
+
+# for METRIC in $DISTANCE_METRICS; do
+#     for MARGIN_TYPE in $MARGIN_TYPES; do
+#         total=$((total + 1))
+
+#         MODEL_ID="${MODEL_ALIAS}-sst5-full-${MARGIN_TYPE}-${METRIC}"
+#         METRICS_FILE="${METRICS_BASE}/sst5/${MODEL_ID}.csv"
+
+#         if [ -f "$METRICS_FILE" ]; then
+#             echo "[SKIP ${total}] ${MODEL_ID}"
+#             skipped=$((skipped + 1))
+#             continue
+#         fi
+
+#         echo ""
+#         echo "-----------------------------------------------------------"
+#         echo "[RUN ${total}] dataset=sst5  pair_mode=full  margin=${MARGIN_TYPE}  metric=${METRIC}"
+#         echo "-----------------------------------------------------------"
+
+#         python -m src.finetune_embedding \
+#             --dataset        sst5 \
+#             --model_name     "$MODEL_NAME" \
+#             --model_alias    "$MODEL_ALIAS" \
+#             --pair_mode      full \
+#             --margin_type    "$MARGIN_TYPE" \
+#             --distance_metric "$METRIC" \
+#             --max_margin     "$MAX_MARGIN" \
+#             --fixed_margin   "$FIXED_MARGIN" \
+#             --epochs         "$EPOCHS" \
+#             --batch_size     "$BATCH_SIZE" \
+#             --learning_rate  "$LEARNING_RATE" \
+#             --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
+
+#         EXIT_CODE=$?
+#         if [ $EXIT_CODE -ne 0 ]; then
+#             echo "[FAILED] ${MODEL_ID} (exit code ${EXIT_CODE})"
+#             failed=$((failed + 1))
+#             failed_runs+=("$MODEL_ID")
+#         else
+#             echo "[DONE] ${MODEL_ID}"
+#             passed=$((passed + 1))
+#         fi
+#     done
+# done
 
 # ── Final summary ────────────────────────────────────────────
 echo ""
