@@ -19,9 +19,9 @@ cd "$REPO_ROOT"
 
 # ── Configurable grid ────────────────────────────────────────
 DATASETS="${DATASETS:-sst5 snli amazon_reviews yelp}"
-K_PROXIES="${K_PROXIES:-1 3 5 10}"
+K_PROXIES="${K_PROXIES:-1 3 5}"
 MARGIN_TYPES="${MARGIN_TYPES:-fixed adaptive}"
-DISTANCE_METRICS="${DISTANCE_METRICS:-cosine euclidean}"
+DISTANCE_METRICS="${DISTANCE_METRICS:-cosine}"
 
 # ── Fixed hyperparameters ────────────────────────────────────
 MODEL_NAME="google/bert_uncased_L-2_H-128_A-2"
@@ -102,9 +102,9 @@ for K in $K_PROXIES; do
     done
 done
 
-# ── SST5 full-pair construction (exhaustive sample-sample pairs) ─────────────
-# Runs only after all proxy-based experiments so proxy results are available
-# for direct comparison. k_proxies is irrelevant here (not part of model_id).
+# # ── SST5 full-pair construction (exhaustive sample-sample pairs) ─────────────
+# # Runs only after all proxy-based experiments so proxy results are available
+# # for direct comparison. k_proxies is irrelevant here (not part of model_id).
 # echo ""
 # echo "======================================================="
 # echo " SST5 full-pair construction"

@@ -1,6 +1,6 @@
 {
     "amazon_reviews": {
-        "CE": 7.5e-5,
+        "CE": 5e-5,
         "BCE": 1e-4,
         "OLL1": 5e-5,
         "OLL15": 2.5e-5,

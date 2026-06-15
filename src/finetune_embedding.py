@@ -171,15 +171,15 @@ def build_pairs(texts, labels, embeddings, k_proxies, max_label_diff, metric='co
         pairs["text_b"].append(texts[proxy_idx])
         pairs["label"].append([1.0, 0.0])
 
-        # Negative pairs: sample → proxy of each other class (sample-proxy, not sample-sample)
-        for other_c, other_proxies in class_proxies.items():
-            if other_c == lbl:
-                continue
-            norm_dist = abs(lbl - other_c) / max_label_diff
-            for p_idx in other_proxies:
-                pairs["text_a"].append(texts[i])
-                pairs["text_b"].append(texts[p_idx])
-                pairs["label"].append([0.0, norm_dist])
+        # # Negative pairs: sample → proxy of each other class (sample-proxy, not sample-sample)
+        # for other_c, other_proxies in class_proxies.items():
+        #     if other_c == lbl:
+        #         continue
+        #     norm_dist = abs(lbl - other_c) / max_label_diff
+        #     for p_idx in other_proxies:
+        #         pairs["text_a"].append(texts[i])
+        #         pairs["text_b"].append(texts[p_idx])
+        #         pairs["label"].append([0.0, norm_dist])
 
     # Cross-class proxy-proxy negative pairs: establish the global ordinal layout in embedding space
     sorted_classes = sorted(class_proxies.keys())
