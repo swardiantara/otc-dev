@@ -190,6 +190,10 @@ def parse_args():
         "--seeds", nargs="+", type=int, default=[1, 2, 3, 4, 5],
         help="Random seeds for repeated runs (default: 1 2 3 4 5).",
     )
+    parser.add_argument(
+        "--model_checkpoint", type=str, default="google/bert_uncased_L-2_H-128_A-2",
+        help="HuggingFace model checkpoint to fine-tune (default: google/bert_uncased_L-2_H-128_A-2).",
+    )
     return parser.parse_args()
 
 
@@ -203,7 +207,7 @@ if __name__ == '__main__':
     with open(ROOT_PATH / "src" / "datasets.json", "r") as f:
         datasets = json.load(f)
 
-    model_checkpoint = "google/bert_uncased_L-2_H-128_A-2"
+    model_checkpoint = args.model_checkpoint
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
     weight_decay_ = 0.01
