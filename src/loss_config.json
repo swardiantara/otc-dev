@@ -1,0 +1,54 @@
+{
+    "amazon_reviews": {
+        "CE": 7.5e-5,
+        "BCE": 1e-4,
+        "OLL1": 5e-5,
+        "OLL15": 2.5e-5,
+        "OLL2": 5e-5,
+        "WKL": 5e-5,
+        "SOFT2": 5e-5,
+        "SOFT3": 5e-5,
+        "SOFT4": 5e-5,
+        "EMD": 5e-5,
+        "CORAL": 5e-3
+    },
+    "snli": {
+        "CE": 7.5e-5,
+        "BCE": 1e-4,
+        "OLL1": 1e-4,
+        "OLL15": 7.5e-5,
+        "OLL2": 7.5e-5,
+        "WKL": 1e-4,
+        "SOFT2": 2.5e-5,
+        "SOFT3": 1e-4,
+        "SOFT4": 7.5e-5,
+        "EMD": 1e-4,
+        "CORAL": 2.5e-5
+    }, 
+    "sst5": {
+        "CE": 5e-5,
+        "BCE": 1e-4,
+        "OLL1": 7.5e-5,
+        "OLL15": 7.5e-5,
+        "OLL2": 1e-5,
+        "WKL": 1e-5,
+        "SOFT2": 2.5e-5,
+        "SOFT3": 1e-5,
+        "SOFT4": 7.5e-5,
+        "EMD": 7.5e-5,
+        "CORAL": 1e-3
+    }, 
+    "yelp": {
+        "CE": 7.5e-5,
+        "BCE": 1e-4,
+        "OLL1": 5e-5,
+        "OLL15": 1e-4,
+        "OLL2": 1e-4,
+        "WKL": 1e-4,
+        "SOFT2": 7.5e-5,
+        "SOFT3": 7.5e-5,
+        "SOFT4": 1e-4,
+        "EMD": 7.5e-5,
+        "CORAL": 5e-3
+    }
+}

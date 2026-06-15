@@ -1,0 +1,26 @@
+{
+    "amazon_reviews": {
+        "pair_mode": "proxy",
+        "k_proxies": 10,
+        "margin_type": "adaptive",
+        "metric": "cosine"
+    },
+    "snli": {
+        "pair_mode": "proxy",
+        "k_proxies": 10,
+        "margin_type": "adaptive",
+        "metric": "cosine"
+    },
+    "sst5": {
+        "pair_mode": "proxy",
+        "k_proxies": 10,
+        "margin_type": "adaptive",
+        "metric": "cosine"
+    },
+    "yelp": {
+        "pair_mode": "proxy",
+        "k_proxies": 3,
+        "margin_type": "adaptive",
+        "metric": "cosine"
+    }
+}
