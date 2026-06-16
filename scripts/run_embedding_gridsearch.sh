@@ -54,105 +54,105 @@ passed=0
 failed=0
 failed_runs=()
 
-for K in $K_PROXIES; do
-    for METRIC in $DISTANCE_METRICS; do
-        for MARGIN_TYPE in $MARGIN_TYPES; do
-            for DATASET in $DATASETS; do
-                total=$((total + 1))
+# for K in $K_PROXIES; do
+#     for METRIC in $DISTANCE_METRICS; do
+#         for MARGIN_TYPE in $MARGIN_TYPES; do
+#             for DATASET in $DATASETS; do
+#                 total=$((total + 1))
 
-                MODEL_ID="${MODEL_ALIAS}-${DATASET}-k${K}-${MARGIN_TYPE}-${METRIC}"
-                METRICS_FILE="${METRICS_BASE}/${DATASET}/${MODEL_ID}.csv"
+#                 MODEL_ID="${MODEL_ALIAS}-${DATASET}-k${K}-${MARGIN_TYPE}-${METRIC}"
+#                 METRICS_FILE="${METRICS_BASE}/${DATASET}/${MODEL_ID}.csv"
 
-                if [ -f "$METRICS_FILE" ]; then
-                    echo "[SKIP ${total}] ${MODEL_ID}"
-                    skipped=$((skipped + 1))
-                    continue
-                fi
+#                 if [ -f "$METRICS_FILE" ]; then
+#                     echo "[SKIP ${total}] ${MODEL_ID}"
+#                     skipped=$((skipped + 1))
+#                     continue
+#                 fi
 
-                echo ""
-                echo "-----------------------------------------------------------"
-                echo "[RUN ${total}] dataset=${DATASET}  k=${K}  margin=${MARGIN_TYPE}  metric=${METRIC}"
-                echo "-----------------------------------------------------------"
+#                 echo ""
+#                 echo "-----------------------------------------------------------"
+#                 echo "[RUN ${total}] dataset=${DATASET}  k=${K}  margin=${MARGIN_TYPE}  metric=${METRIC}"
+#                 echo "-----------------------------------------------------------"
 
-                python -m src.finetune_embedding \
-                    --dataset        "$DATASET" \
-                    --model_name     "$MODEL_NAME" \
-                    --model_alias    "$MODEL_ALIAS" \
-                    --k_proxies      "$K" \
-                    --margin_type    "$MARGIN_TYPE" \
-                    --distance_metric "$METRIC" \
-                    --max_margin     "$MAX_MARGIN" \
-                    --fixed_margin   "$FIXED_MARGIN" \
-                    --epochs         "$EPOCHS" \
-                    --batch_size     "$BATCH_SIZE" \
-                    --learning_rate  "$LEARNING_RATE" \
-                    --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
+#                 python -m src.finetune_embedding \
+#                     --dataset        "$DATASET" \
+#                     --model_name     "$MODEL_NAME" \
+#                     --model_alias    "$MODEL_ALIAS" \
+#                     --k_proxies      "$K" \
+#                     --margin_type    "$MARGIN_TYPE" \
+#                     --distance_metric "$METRIC" \
+#                     --max_margin     "$MAX_MARGIN" \
+#                     --fixed_margin   "$FIXED_MARGIN" \
+#                     --epochs         "$EPOCHS" \
+#                     --batch_size     "$BATCH_SIZE" \
+#                     --learning_rate  "$LEARNING_RATE" \
+#                     --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
 
-                EXIT_CODE=$?
-                if [ $EXIT_CODE -ne 0 ]; then
-                    echo "[FAILED] ${MODEL_ID} (exit code ${EXIT_CODE})"
-                    failed=$((failed + 1))
-                    failed_runs+=("$MODEL_ID")
-                else
-                    echo "[DONE] ${MODEL_ID}"
-                    passed=$((passed + 1))
-                fi
-            done
-        done
-    done
-done
-
-# # ── SST5 full-pair construction (exhaustive sample-sample pairs) ─────────────
-# # Runs only after all proxy-based experiments so proxy results are available
-# # for direct comparison. k_proxies is irrelevant here (not part of model_id).
-# echo ""
-# echo "======================================================="
-# echo " SST5 full-pair construction"
-# echo "======================================================="
-
-# for METRIC in $DISTANCE_METRICS; do
-#     for MARGIN_TYPE in $MARGIN_TYPES; do
-#         total=$((total + 1))
-
-#         MODEL_ID="${MODEL_ALIAS}-sst5-full-${MARGIN_TYPE}-${METRIC}"
-#         METRICS_FILE="${METRICS_BASE}/sst5/${MODEL_ID}.csv"
-
-#         if [ -f "$METRICS_FILE" ]; then
-#             echo "[SKIP ${total}] ${MODEL_ID}"
-#             skipped=$((skipped + 1))
-#             continue
-#         fi
-
-#         echo ""
-#         echo "-----------------------------------------------------------"
-#         echo "[RUN ${total}] dataset=sst5  pair_mode=full  margin=${MARGIN_TYPE}  metric=${METRIC}"
-#         echo "-----------------------------------------------------------"
-
-#         python -m src.finetune_embedding \
-#             --dataset        sst5 \
-#             --model_name     "$MODEL_NAME" \
-#             --model_alias    "$MODEL_ALIAS" \
-#             --pair_mode      full \
-#             --margin_type    "$MARGIN_TYPE" \
-#             --distance_metric "$METRIC" \
-#             --max_margin     "$MAX_MARGIN" \
-#             --fixed_margin   "$FIXED_MARGIN" \
-#             --epochs         "$EPOCHS" \
-#             --batch_size     "$BATCH_SIZE" \
-#             --learning_rate  "$LEARNING_RATE" \
-#             --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
-
-#         EXIT_CODE=$?
-#         if [ $EXIT_CODE -ne 0 ]; then
-#             echo "[FAILED] ${MODEL_ID} (exit code ${EXIT_CODE})"
-#             failed=$((failed + 1))
-#             failed_runs+=("$MODEL_ID")
-#         else
-#             echo "[DONE] ${MODEL_ID}"
-#             passed=$((passed + 1))
-#         fi
+#                 EXIT_CODE=$?
+#                 if [ $EXIT_CODE -ne 0 ]; then
+#                     echo "[FAILED] ${MODEL_ID} (exit code ${EXIT_CODE})"
+#                     failed=$((failed + 1))
+#                     failed_runs+=("$MODEL_ID")
+#                 else
+#                     echo "[DONE] ${MODEL_ID}"
+#                     passed=$((passed + 1))
+#                 fi
+#             done
+#         done
 #     done
 # done
+
+# ── SST5 full-pair construction (exhaustive sample-sample pairs) ─────────────
+# Runs only after all proxy-based experiments so proxy results are available
+# for direct comparison. k_proxies is irrelevant here (not part of model_id).
+echo ""
+echo "======================================================="
+echo " SST5 full-pair construction"
+echo "======================================================="
+
+for METRIC in $DISTANCE_METRICS; do
+    for MARGIN_TYPE in $MARGIN_TYPES; do
+        total=$((total + 1))
+
+        MODEL_ID="${MODEL_ALIAS}-sst5-full-${MARGIN_TYPE}-${METRIC}"
+        METRICS_FILE="${METRICS_BASE}/sst5/${MODEL_ID}.csv"
+
+        if [ -f "$METRICS_FILE" ]; then
+            echo "[SKIP ${total}] ${MODEL_ID}"
+            skipped=$((skipped + 1))
+            continue
+        fi
+
+        echo ""
+        echo "-----------------------------------------------------------"
+        echo "[RUN ${total}] dataset=sst5  pair_mode=full  margin=${MARGIN_TYPE}  metric=${METRIC}"
+        echo "-----------------------------------------------------------"
+
+        python -m src.finetune_embedding \
+            --dataset        sst5 \
+            --model_name     "$MODEL_NAME" \
+            --model_alias    "$MODEL_ALIAS" \
+            --pair_mode      full \
+            --margin_type    "$MARGIN_TYPE" \
+            --distance_metric "$METRIC" \
+            --max_margin     "$MAX_MARGIN" \
+            --fixed_margin   "$FIXED_MARGIN" \
+            --epochs         "$EPOCHS" \
+            --batch_size     "$BATCH_SIZE" \
+            --learning_rate  "$LEARNING_RATE" \
+            --early_stopping_patience "$EARLY_STOPPING_PATIENCE"
+
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "[FAILED] ${MODEL_ID} (exit code ${EXIT_CODE})"
+            failed=$((failed + 1))
+            failed_runs+=("$MODEL_ID")
+        else
+            echo "[DONE] ${MODEL_ID}"
+            passed=$((passed + 1))
+        fi
+    done
+done
 
 # ── Final summary ────────────────────────────────────────────
 echo ""
