@@ -95,13 +95,15 @@ text-classification port of **Constrained Proxies Learning** (Wang et al.,
 Proxies Learning*, AAAI 2023; original image code:
 [Tenvence/cpl](https://github.com/Tenvence/cpl)).
 
-Rather than recoding labels or building contrastive pairs, CPL learns **one
-proxy vector per ordinal class** and explicitly constrains the *global layout*
-of those proxies so the class order becomes a geometric order in feature space.
-A sample is classified by the proxy most similar to its BERT feature, which —
-on an ordinal layout — yields the unimodal probability distribution that is
-ideal for ordinal classification. Four variants are implemented exactly as in
-the paper:
+Here CPL is used as an **embedding fine-tuning stage** — the same two-stage
+pattern as the contrastive `finetune_embedding.py`: it shapes the BERT-tiny
+embedding space, then the fine-tuned backbone is reused by the classifier
+pipeline (`src/training.py`). Rather than recoding labels or building
+contrastive pairs, CPL learns **one proxy vector per ordinal class** and
+explicitly constrains the *global layout* of those proxies so the class order
+becomes a geometric order in embedding space; each sample's (mean-pooled) BERT
+embedding is pulled toward the proxy of its class. Four variants are implemented
+exactly as in the paper:
 
 | Constraint | Layout | Metric | Loss |
 |------------|--------|--------|------|
@@ -110,27 +112,43 @@ the paper:
 | `S-P` | Soft, free proxies | Euclidean or cosine | `CE + α·KL(U_Poisson ‖ Q)` |
 | `S-B` | Soft, free proxies | Euclidean or cosine | `CE + α·KL(U_Binomial ‖ Q)` |
 
-The feature extractor is BERT-tiny (`google/bert_uncased_L-2_H-128_A-2`) with a
-linear projection to `--feature_dim`; the proxies learner is trained at a higher
-learning rate than the encoder (`--lr × --lr_pl_mul`).
+The embedding that CPL shapes (and pushes) is the **mean-pooled BERT-tiny
+output** (dim 128); proxies live in that space. The proxies learner is trained
+at a higher learning rate than the encoder (`--lr × --lr_pl_mul`).
 
-**Train + evaluate a single run:**
+### Stage 1 — embedding fine-tuning
+
 ```bash
+# single variant: fine-tune, eval NOS + kNN-MAE on validation, push backbone to HF
 python -m src.finetune_cpl --dataset sst5 --constraint S-B --metric_method E
-```
 
-**Run the full sweep** (all datasets × variants × seeds):
-```bash
+# full sweep over all datasets × variants (+ recap that picks the best per dataset)
 bash scripts/run_cpl.sh
-# or scope it:
-DATASETS="sst5 snli" CONSTRAINTS="H-L S-B" SEEDS="1 2 3" bash scripts/run_cpl.sh
+# scope it / skip Hub push for a dry run:
+DATASETS="sst5 snli" CONSTRAINTS="H-L S-B" PUSH=0 bash scripts/run_cpl.sh
 ```
 
-Test-set metrics are appended to
-`src/outputs_training/output_metrics/{dataset}/metrics_test_set.csv` in the same
-schema as `inference.py` (`loss` column = e.g. `CPL-H-L`, `CPL-S-B-E`), so
-`scripts/analyze_results.py` aggregates CPL rows alongside the loss-function
-baselines.
+Per-run validation metrics are written to
+`results/cpl_embedding/{dataset}/{model_id}.csv` (model_id =
+`bert-tiny-{dataset}-cpl-{constraint}-{metric}`) and the fine-tuned BERT
+backbone is pushed to the HuggingFace Hub. `scripts/recap_cpl.py` then
+aggregates these into `results/cpl_embedding/summary.csv` and selects the best
+embedding **per dataset by validation kNN-MAE** into
+`src/cpl_embedding_config.json`.
+
+### Stage 2 — classifier (reuses the existing pipeline)
+
+Feed the selected backbone to `src/training.py`, exactly as
+`scripts/run_finetuning.sh` does for the contrastive embeddings:
+
+```bash
+HF_USER=$(python -c "from huggingface_hub import whoami; print(whoami()['name'])")
+MODEL_ID=$(python -c "import json;print(json.load(open('src/cpl_embedding_config.json'))['sst5']['model_id'])")
+python -m src.training --datasets sst5 --losses CE --model_checkpoint "${HF_USER}/${MODEL_ID}"
+```
+
+Classifier test metrics then flow through `inference.py` →
+`analyze_results.py` like every other run.
 
 ## Citation
 If you found our code useful for your research, please consider citing it:
