@@ -86,6 +86,52 @@ Run the `scr/inference.py` file to evaluate the the model checkpoints generated 
 
 **Note**: In `src/model_coral.py` we reimplemented the coral method as presented [here](https://github.com/Raschka-research-group/coral-cnn). 
 
+---
+## Constrained Proxies Learning (CPL)
+
+In addition to the loss-function experiments above, this repo includes a
+text-classification port of **Constrained Proxies Learning** (Wang et al.,
+*Controlling Class Layout for Deep Ordinal Classification via Constrained
+Proxies Learning*, AAAI 2023; original image code:
+[Tenvence/cpl](https://github.com/Tenvence/cpl)).
+
+Rather than recoding labels or building contrastive pairs, CPL learns **one
+proxy vector per ordinal class** and explicitly constrains the *global layout*
+of those proxies so the class order becomes a geometric order in feature space.
+A sample is classified by the proxy most similar to its BERT feature, which —
+on an ordinal layout — yields the unimodal probability distribution that is
+ideal for ordinal classification. Four variants are implemented exactly as in
+the paper:
+
+| Constraint | Layout | Metric | Loss |
+|------------|--------|--------|------|
+| `H-L` | Hard, linear (`p_k = k·v0`) | Euclidean (fixed) | `KL(Q(k*) ‖ P(f))` |
+| `H-S` | Hard, semicircular | cosine (fixed) | `KL(Q(k*) ‖ P(f))` |
+| `S-P` | Soft, free proxies | Euclidean or cosine | `CE + α·KL(U_Poisson ‖ Q)` |
+| `S-B` | Soft, free proxies | Euclidean or cosine | `CE + α·KL(U_Binomial ‖ Q)` |
+
+The feature extractor is BERT-tiny (`google/bert_uncased_L-2_H-128_A-2`) with a
+linear projection to `--feature_dim`; the proxies learner is trained at a higher
+learning rate than the encoder (`--lr × --lr_pl_mul`).
+
+**Train + evaluate a single run:**
+```bash
+python -m src.finetune_cpl --dataset sst5 --constraint S-B --metric_method E
+```
+
+**Run the full sweep** (all datasets × variants × seeds):
+```bash
+bash scripts/run_cpl.sh
+# or scope it:
+DATASETS="sst5 snli" CONSTRAINTS="H-L S-B" SEEDS="1 2 3" bash scripts/run_cpl.sh
+```
+
+Test-set metrics are appended to
+`src/outputs_training/output_metrics/{dataset}/metrics_test_set.csv` in the same
+schema as `inference.py` (`loss` column = e.g. `CPL-H-L`, `CPL-S-B-E`), so
+`scripts/analyze_results.py` aggregates CPL rows alongside the loss-function
+baselines.
+
 ## Citation
 If you found our code useful for your research, please consider citing it:
 ```
