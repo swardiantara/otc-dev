@@ -280,8 +280,15 @@ if __name__ == '__main__':
 
         for loss_type in args.losses:
             # Tag auxiliary-loss runs so their checkpoints/metrics don't collide with
-            # (or get skipped by) the plain single-loss runs.
-            loss_tag = f"{loss_type}-TRIP" if args.add_triplet_loss else loss_type
+            # (or get skipped by) the plain single-loss runs. The alpha value is encoded
+            # (e.g. OLL2-TRIPa1p5) so different alpha settings coexist as distinct,
+            # comparable runs in the shared metrics CSV. '.' -> 'p' keeps it path-safe
+            # while staying parseable by inference.py / analyze_results.py.
+            if args.add_triplet_loss:
+                alpha_str = f"{args.triplet_alpha:g}".replace(".", "p")
+                loss_tag = f"{loss_type}-TRIPa{alpha_str}"
+            else:
+                loss_tag = loss_type
             for learning_rate_ in args.learning_rates:
                 # Identify which seeds still need to run for this (dataset, loss, lr) combo.
                 pending_seeds = []

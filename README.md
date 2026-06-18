@@ -108,7 +108,7 @@ python -m src.training --losses OLL2 --add_triplet_loss \
 | `--triplet_temp` | 0.05 | InfoNCE softmax temperature τ |
 | `--triplet_alpha` | 2.0 | SimCSE weight `w=alpha**d_norm` on the farthest label (>=1; 1 = plain SimCSE) |
 
-Auxiliary-loss runs are tagged (`<LOSS>-TRIP`) in checkpoint/metric names so they don't collide with the plain single-loss runs.
+Auxiliary-loss runs are tagged (`<LOSS>-TRIPa<alpha>`, e.g. `OLL2-TRIPa1p5`) in checkpoint/metric names so they don't collide with the plain single-loss runs, and so different `alpha` settings coexist as distinct, comparable rows in the analysis. The inference and analysis scripts parse this tag automatically, so `scripts/run_triplet_pipeline.sh` plugs into the same train → infer → analyze → visualize flow as `scripts/run_pipeline.sh`.
 
 3. Evaluation
 

@@ -9,6 +9,7 @@ from typing import List
 import numpy as np
 from tqdm import tqdm
 import csv
+import re
 import torch
 from datasets import load_dataset
 from scipy.stats import kendalltau
@@ -188,22 +189,24 @@ if __name__ == '__main__':
 
         saved_models = np.sort(os.listdir(models_path))
         dictpath = {}
-        offset = 28
 
         for path in saved_models:
+            # Match the base loss and (optionally) an ordinal-triplet suffix:
+            #   ...-OLL2-1_...            -> base "OLL2",  label "OLL2"
+            #   ...-OLL2-TRIPa1p5-1_...   -> base "OLL2",  label "OLL2-TRIPa1p5"
+            # losses is ordered so OLL15 is tested before OLL1 (substring safety).
+            base_loss = None
             loss_name = None
-            loss_len = 0
             for loss in losses:
-                if f"-{loss}-" in path:
-                    loss_len = len(loss)
-                    loss_name = loss
+                m = re.search(rf"-{re.escape(loss)}(-TRIP\w*)?-\d+_", path)
+                if m:
+                    base_loss = loss
+                    loss_name = loss + (m.group(1) or "")
                     break
             if loss_name is None:
                 continue
 
-            n = len(dataset_file) + loss_len + offset
-            corrected_path = path[:n] + path[n + 2:] + path[n:n + 2]
-            dictpath[corrected_path] = {"path": path, "loss": loss_name}
+            dictpath[path] = {"path": path, "loss": loss_name, "base_loss": base_loss}
 
         if output_path_metrics.is_file():
             dt = pd.read_csv(output_path_metrics, header=0)
@@ -212,14 +215,15 @@ if __name__ == '__main__':
 
         for path in np.sort(list(dictpath.keys())):
             trained_model = dictpath[path]["path"]
-            loss_func = dictpath[path]["loss"]
+            loss_func = dictpath[path]["loss"]        # full label, e.g. "OLL2-TRIPa1p5"
+            base_loss = dictpath[path]["base_loss"]   # base loss, e.g. "OLL2" (drives the head)
 
             if "trained_model" in dt.columns and trained_model in dt["trained_model"].tolist():
                 continue
 
             pre_trained_model = f"{model_dir}bert-tiny"
 
-            if loss_func == "CORAL":
+            if base_loss == "CORAL":
                 model = CoralModel.from_pretrained(
                     str(models_path / trained_model)).to(device)
             else:
@@ -243,12 +247,12 @@ if __name__ == '__main__':
                         attention_mask=torch.tensor(inputs["attention_mask"]).to(device),
                         token_type_ids=torch.tensor(inputs["token_type_ids"]).to(device),
                     )
-                if loss_func == "CORAL":
+                if base_loss == "CORAL":
                     predictions_test.extend(
                         (np.column_stack((np.zeros((preds.logits.cpu().detach().numpy().shape[0], 1)),
                                           expit(preds.logits.cpu().detach().numpy()))) > 0.5).sum(axis=1)
                     )
-                elif loss_func == "BCE":
+                elif base_loss == "BCE":
                     # BCE ordinal: sigmoid per position, class = (positions > 0.5) - 1
                     # target[k]=1 iff k<=y, so predicted y = count(sigmoid>0.5) - 1
                     sigmoid_out = expit(preds.logits.cpu().detach().numpy())
