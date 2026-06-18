@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Grid-search pipeline for the ordinal-aware auxiliary contrastive loss.
+# Best-configuration pipeline for the ordinal-aware auxiliary contrastive loss.
 #
-# Same train -> infer -> analyze -> visualize flow as scripts/run_pipeline.sh,
-# but training is run WITH --add_triplet_loss, so each (dataset, loss, lr, seed)
-# combination is fine-tuned with the chosen main loss PLUS the SimCSE-style
-# ordinal-weighted InfoNCE auxiliary term (see README "Optional: ordinal-aware
-# auxiliary contrastive loss" and src/loss_functions.py:ordinal_infonce_loss).
+# Same train -> infer -> analyze -> visualize flow as scripts/run_pipeline.sh, but:
+#   * training is run WITH --add_triplet_loss, so each (dataset, loss) is fine-tuned
+#     with the chosen main loss PLUS the SimCSE-style ordinal-weighted InfoNCE
+#     auxiliary term (see README "Optional: ordinal-aware auxiliary contrastive
+#     loss" and src/loss_functions.py:ordinal_infonce_loss);
+#   * there is NO learning-rate sweep — each (dataset, loss) is trained only at its
+#     best learning rate, read from src/loss_config.json via --lr_config.
 #
 # Runs are tagged <LOSS>-TRIPa<alpha> (e.g. OLL2-TRIPa1p5) in checkpoint/metric
 # names, so they live alongside the plain-loss baselines from run_pipeline.sh and
@@ -18,8 +20,8 @@
 # Optional env vars:
 #   DATASETS    e.g. "sst5 snli"        (default: all four)
 #   LOSSES      e.g. "CE OLL1 OLL2"     (default: all eleven)
-#   LRS         e.g. "1e-4 5e-5"        (default: 5 from the OLL paper)
 #   SEEDS       e.g. "1 2 3"            (default: 1 2 3 4 5)
+#   LR_CONFIG   path to {dataset:{loss:best_lr}} JSON (default: src/loss_config.json)
 #   TRIP_ALPHA  ordinal weight on the farthest label, w=alpha**d_norm in [1,alpha]
 #                                       (default: 1.5; SimCSE setting is 1.0)
 #   TRIP_TEMP   InfoNCE temperature tau (default: 0.05 — SimCSE's best temperature)
@@ -43,8 +45,8 @@ cd "$REPO_ROOT"
 
 DATASETS="${DATASETS:-amazon_reviews snli sst5 yelp}"
 LOSSES="${LOSSES:-BCE CE OLL1 OLL15 OLL2 CORAL WKL SOFT2 SOFT3 SOFT4 EMD}"
-LRS="${LRS:-1e-4 1e-5 7.5e-5 5e-5 2.5e-5}"
 SEEDS="${SEEDS:-1 2 3 4 5}"
+LR_CONFIG="${LR_CONFIG:-src/loss_config.json}"
 
 TRIP_ALPHA="${TRIP_ALPHA:-1.5}"
 TRIP_TEMP="${TRIP_TEMP:-0.05}"
@@ -55,7 +57,7 @@ echo " OLL + Ordinal-Aware Triplet (auxiliary InfoNCE) Pipeline"
 echo "======================================================="
 echo " Datasets    : $DATASETS"
 echo " Losses      : $LOSSES"
-echo " LRs         : $LRS"
+echo " LR          : best per (dataset, loss) from $LR_CONFIG"
 echo " Seeds       : $SEEDS"
 echo " triplet_alpha  : $TRIP_ALPHA"
 echo " triplet_temp   : $TRIP_TEMP   (SimCSE best temperature)"
@@ -74,11 +76,11 @@ python -m scripts.prepare_datasets --datasets $DATASETS
 
 # ── Step 3: Training (with the ordinal-aware auxiliary loss) ─
 echo ""
-echo "[3/5] Training with --add_triplet_loss (tag: <LOSS>-TRIPa${TRIP_ALPHA/./p}) ..."
+echo "[3/5] Training with --add_triplet_loss (tag: <LOSS>-TRIPa${TRIP_ALPHA/./p}), best LR per (dataset, loss) ..."
 python -m src.training \
     --datasets $DATASETS \
     --losses   $LOSSES \
-    --learning_rates $LRS \
+    --lr_config "$LR_CONFIG" \
     --seeds    $SEEDS \
     --add_triplet_loss \
     --triplet_alpha  "$TRIP_ALPHA" \
