@@ -7,7 +7,8 @@
 #     auxiliary term (see README "Optional: ordinal-aware auxiliary contrastive
 #     loss" and src/loss_functions.py:ordinal_infonce_loss);
 #   * there is NO learning-rate sweep — each (dataset, loss) is trained only at its
-#     best learning rate, read from src/loss_config.json via --lr_config.
+#     best learning rate, looked up from src/loss_config.json in the loop below and
+#     passed to the (unmodified) training script via --learning_rates.
 #
 # Runs are tagged <LOSS>-TRIPa<alpha> (e.g. OLL2-TRIPa1p5) in checkpoint/metric
 # names, so they live alongside the plain-loss baselines from run_pipeline.sh and
@@ -76,16 +77,29 @@ python -m scripts.prepare_datasets --datasets $DATASETS
 
 # ── Step 3: Training (with the ordinal-aware auxiliary loss) ─
 echo ""
-echo "[3/5] Training with --add_triplet_loss (tag: <LOSS>-TRIPa${TRIP_ALPHA/./p}), best LR per (dataset, loss) ..."
-python -m src.training \
-    --datasets $DATASETS \
-    --losses   $LOSSES \
-    --lr_config "$LR_CONFIG" \
-    --seeds    $SEEDS \
-    --add_triplet_loss \
-    --triplet_alpha  "$TRIP_ALPHA" \
-    --triplet_temp   "$TRIP_TEMP" \
-    --triplet_weight "$TRIP_WEIGHT"
+echo "[3/5] Training with --add_triplet_loss (tag: <LOSS>-TRIPa${TRIP_ALPHA/./p}), best LR per (dataset, loss) from $LR_CONFIG ..."
+# One training invocation per (dataset, loss): look up the best LR for the pair in
+# $LR_CONFIG and pass it as a single --learning_rates value. The training script is
+# used unchanged. Pairs missing from the config are skipped with a warning.
+for ds in $DATASETS; do
+    for loss in $LOSSES; do
+        lr="$(python -c "import json; print(json.load(open('$LR_CONFIG'))['$ds']['$loss'])" 2>/dev/null)" || true
+        if [ -z "$lr" ]; then
+            echo "  ! No LR for $ds/$loss in $LR_CONFIG — skipping."
+            continue
+        fi
+        echo "  -> $ds / $loss @ lr=$lr"
+        python -m src.training \
+            --datasets $ds \
+            --losses   $loss \
+            --learning_rates "$lr" \
+            --seeds    $SEEDS \
+            --add_triplet_loss \
+            --triplet_alpha  "$TRIP_ALPHA" \
+            --triplet_temp   "$TRIP_TEMP" \
+            --triplet_weight "$TRIP_WEIGHT"
+    done
+done
 
 # ── Step 4: Evaluation / Inference ──────────────────────────
 # inference.py parses the -TRIPa<alpha> tag automatically and writes the full

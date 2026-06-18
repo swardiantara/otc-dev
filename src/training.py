@@ -184,15 +184,7 @@ def parse_args():
     )
     parser.add_argument(
         "--learning_rates", nargs="+", type=float, default=ALL_LRS,
-        metavar="LR", help="Learning rates to sweep (default: 5 values from paper). "
-                           "Ignored for any (dataset, loss) covered by --lr_config.",
-    )
-    parser.add_argument(
-        "--lr_config", type=str, default=None,
-        help="Path to a JSON mapping {dataset: {loss: best_lr}} (e.g. "
-             "src/loss_config.json). When set, each (dataset, loss) is trained "
-             "only at its best learning rate from this file instead of sweeping "
-             "--learning_rates.",
+        metavar="LR", help="Learning rates to sweep (default: 5 values from paper).",
     )
     parser.add_argument(
         "--seeds", nargs="+", type=int, default=[1, 2, 3, 4, 5],
@@ -239,13 +231,6 @@ if __name__ == '__main__':
 
     with open(ROOT_PATH / "src" / "datasets.json", "r") as f:
         datasets = json.load(f)
-
-    # Optional per-(dataset, loss) best learning rate. When provided, the LR sweep
-    # is replaced by the single best LR looked up from this file.
-    lr_config = None
-    if args.lr_config:
-        with open(args.lr_config, "r") as f:
-            lr_config = json.load(f)
 
     model_checkpoint = args.model_checkpoint
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
@@ -304,18 +289,7 @@ if __name__ == '__main__':
                 loss_tag = f"{loss_type}-TRIPa{alpha_str}"
             else:
                 loss_tag = loss_type
-
-            # Pick the learning rate(s) for this (dataset, loss): a single best LR
-            # from --lr_config when available, otherwise the full --learning_rates sweep.
-            if lr_config is not None:
-                if data_file not in lr_config or loss_type not in lr_config[data_file]:
-                    print(f"Skipping {data_file}/{loss_type} (no entry in --lr_config)")
-                    continue
-                learning_rates = [float(lr_config[data_file][loss_type])]
-            else:
-                learning_rates = args.learning_rates
-
-            for learning_rate_ in learning_rates:
+            for learning_rate_ in args.learning_rates:
                 # Identify which seeds still need to run for this (dataset, loss, lr) combo.
                 pending_seeds = []
                 for k in args.seeds:
