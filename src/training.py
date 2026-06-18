@@ -11,7 +11,7 @@ from src.model_coral import CoralModel
 from src.loss_functions import (
     OLL1Trainer, OLL15Trainer, OLL2Trainer,
     WKLTrainer, SOFT2Trainer, SOFT3Trainer, SOFT4Trainer, EMDTrainer,
-    BCEOrdinalTrainer,
+    BCEOrdinalTrainer, make_ordinal_aux_trainer,
 )
 import os
 import sys
@@ -194,6 +194,31 @@ def parse_args():
         "--model_checkpoint", type=str, default="google/bert_uncased_L-2_H-128_A-2",
         help="HuggingFace model checkpoint to fine-tune (default: google/bert_uncased_L-2_H-128_A-2).",
     )
+    parser.add_argument(
+        "--add_triplet_loss", action="store_true",
+        help="Add the ordinal-aware contrastive (SimCSE-style weighted InfoNCE) "
+             "loss as an auxiliary term on the [CLS] embedding, on top of the "
+             "chosen main loss. If not passed, only the chosen loss is used.",
+    )
+    parser.add_argument(
+        "--triplet_weight", type=float, default=0.1,
+        help="Weight lambda of the auxiliary loss: total = main + lambda * aux "
+             "(default: 0.1). Only used with --add_triplet_loss.",
+    )
+    parser.add_argument(
+        "--triplet_temp", type=float, default=0.05,
+        help="Softmax temperature for the auxiliary InfoNCE loss (default: 0.05, "
+             "the SimCSE default). Only used with --add_triplet_loss.",
+    )
+    parser.add_argument(
+        "--triplet_alpha", type=float, default=2.0,
+        help="SimCSE-faithful ordinal negative weight w(d)=alpha**d_norm, bounded "
+             "in [1, alpha]: the farthest-label negative gets weight alpha (like "
+             "SimCSE Eq. 8), label-adjacent negatives stay near 1. alpha=1 recovers "
+             "plain supervised SimCSE (no ordinal weighting); larger values push "
+             "ordinally-far negatives harder (default: 2.0). "
+             "Only used with --add_triplet_loss.",
+    )
     return parser.parse_args()
 
 
@@ -254,11 +279,14 @@ if __name__ == '__main__':
         stopping_rate = max(1, int(0.05 * epochs_))
 
         for loss_type in args.losses:
+            # Tag auxiliary-loss runs so their checkpoints/metrics don't collide with
+            # (or get skipped by) the plain single-loss runs.
+            loss_tag = f"{loss_type}-TRIP" if args.add_triplet_loss else loss_type
             for learning_rate_ in args.learning_rates:
                 # Identify which seeds still need to run for this (dataset, loss, lr) combo.
                 pending_seeds = []
                 for k in args.seeds:
-                    model_name = "-".join([model_checkpoint, data_file, loss_type, str(k)])
+                    model_name = "-".join([model_checkpoint, data_file, loss_tag, str(k)])
                     save_dir = (
                         ROOT_PATH / "src" / "outputs_training" / "output_models"
                         / data_file / "saved_models"
@@ -279,7 +307,7 @@ if __name__ == '__main__':
                     torch.manual_seed(k)
 
                     model_name = "-".join([
-                        model_checkpoint, data_file, loss_type, str(k)
+                        model_checkpoint, data_file, loss_tag, str(k)
                     ])
                     save_dir = (
                         ROOT_PATH / "src" / "outputs_training" / "output_models"
@@ -328,6 +356,15 @@ if __name__ == '__main__':
                     )
 
                     loss_function = losses_dict[loss_type]
+                    if args.add_triplet_loss:
+                        # Keep the chosen loss as the main term; add the ordinal
+                        # InfoNCE auxiliary on the [CLS] embedding.
+                        loss_function = make_ordinal_aux_trainer(
+                            loss_function,
+                            triplet_weight=args.triplet_weight,
+                            triplet_temp=args.triplet_temp,
+                            triplet_alpha=args.triplet_alpha,
+                        )
                     if loss_type == "CORAL":
                         eval_function = compute_metrics_coral
                     elif loss_type == "BCE":
