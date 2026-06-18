@@ -82,23 +82,23 @@ are defined in the `src/loss_functions.py` file.
 
 #### Optional: ordinal-aware auxiliary contrastive loss
 
-Any of the losses above can be combined with an **ordinal-aware contrastive auxiliary loss**, inspired by the *hard negatives* mechanism of [SimCSE](https://aclanthology.org/2021.emnlp-main.552/) (Section 6.3). In supervised SimCSE a single weight `α` distinguishes the one true hard negative from other in-batch negatives. Here we generalize that binary "negative type" to the **graded label distance** `d(y_i, y_j)` from the dataset's distance matrix: every differently-labelled sample in the batch is a negative whose weight grows with its ordinal distance,
+Any of the losses above can be combined with an **ordinal-aware contrastive auxiliary loss**, generalizing the *hard negatives* mechanism of [SimCSE](https://aclanthology.org/2021.emnlp-main.552/) (Eq. 8 / Section 6.3). Supervised SimCSE weights the single contradiction hard-negative by `alpha^indicator` (`alpha` raised to an indicator that is 1 only for the true hard negative, 0 otherwise), so `alpha=1` recovers the unweighted objective. We replace that binary indicator with the **normalized label distance** `d(y_i, y_j)` from the dataset's distance matrix:
 
 ```
-w(d) = exp(alpha * d_norm),   d_norm = d / (num_classes - 1)
+w(d) = alpha ** d_norm,   d_norm = d / (num_classes - 1)  in [0, 1]
 ```
 
-so ordinally-far negatives (e.g. label 0 vs 4) are pushed apart more strongly than ordinally-near ones (e.g. label 0 vs 1). The auxiliary term is a supervised InfoNCE computed on the `[CLS]` embedding (cosine, batch-all over positives/negatives) and is added on top of the chosen main loss:
+This keeps SimCSE's parameterization and stays **bounded in `[1, alpha]`** (cosine-compatible): the farthest-label negative (e.g. label 0 vs 4) gets exactly weight `alpha`, while a label-adjacent negative (0 vs 1) stays near 1 — so ordinally-far samples are pushed apart more strongly. The auxiliary term is a supervised InfoNCE on the `[CLS]` embedding (cosine, batch-all over positives/negatives), added on top of the chosen main loss:
 
 ```
 total_loss = main_loss + triplet_weight * ordinal_infonce_loss
 ```
 
-Enable it with `--add_triplet_loss`; when the flag is omitted only the chosen loss is used. `alpha = 0` recovers plain supervised SimCSE (uniform negative weights).
+Enable it with `--add_triplet_loss`; when the flag is omitted only the chosen loss is used. `alpha = 1` recovers plain supervised SimCSE (uniform negative weights, no ordinal signal).
 
 ```bash
 python -m src.training --losses OLL2 --add_triplet_loss \
-    --triplet_weight 0.1 --triplet_temp 0.05 --triplet_alpha 1.0
+    --triplet_weight 0.1 --triplet_temp 0.05 --triplet_alpha 2.0
 ```
 
 | flag | default | meaning |
@@ -106,7 +106,7 @@ python -m src.training --losses OLL2 --add_triplet_loss \
 | `--add_triplet_loss` | off | enable the auxiliary loss |
 | `--triplet_weight` | 0.1 | λ mixing coefficient of the auxiliary term |
 | `--triplet_temp` | 0.05 | InfoNCE softmax temperature τ |
-| `--triplet_alpha` | 1.0 | strength of the ordinal label-distance weighting (0 = plain SimCSE) |
+| `--triplet_alpha` | 2.0 | SimCSE weight `w=alpha**d_norm` on the farthest label (>=1; 1 = plain SimCSE) |
 
 Auxiliary-loss runs are tagged (`<LOSS>-TRIP`) in checkpoint/metric names so they don't collide with the plain single-loss runs.
 

@@ -263,28 +263,34 @@ class EMDTrainer(Trainer):
 # Ordinal-aware auxiliary contrastive loss (SimCSE Section 6.3 generalization)
 # ===========================================================================
 def ordinal_infonce_loss(embeddings, labels, dist_matrix,
-                         temp=0.05, alpha=1.0, metric="cosine", eps=1e-8):
+                         temp=0.05, alpha=2.0, metric="cosine", eps=1e-8):
     """Supervised InfoNCE with ordinal-aware (label-distance) negative weighting.
 
     This generalizes the *hard negatives* mechanism of SimCSE (Gao et al., 2021,
-    Section 6.3).  In supervised SimCSE the per-anchor objective is
+    Eq. 8 / Section 6.3).  In supervised SimCSE the per-anchor objective is
 
         l_i = -log [ e^{sim(h_i, h_i+)/t}
                      / sum_j ( e^{sim(h_i, h_j+)/t}
                                + alpha^{1_i^j} * e^{sim(h_i, h_j-)/t} ) ]
 
-    where a single weight ``alpha`` distinguishes the *one* true hard negative
-    (the contradiction hypothesis, indicator ``1_i^j``) from the other in-batch
-    negatives.  In ordinal classification we have no contradiction pairs; instead
-    every differently-labelled sample is a negative, and its "type" is graded by
-    the label distance ``d_ij = dist_matrix[y_i][y_j]``.  We therefore replace the
-    binary indicator with a continuous, monotone weight
+    where the weight is ``alpha`` *raised to* the indicator ``1_i^j`` (=1 iff
+    j==i): the single true hard negative (the contradiction hypothesis) gets
+    weight ``alpha`` while every other in-batch negative keeps weight
+    ``alpha^0 = 1``.  Hence ``alpha = 1`` recovers the unweighted objective.
 
-        w(d) = exp(alpha * d_norm),   d_norm = d / (K - 1)  in (0, 1]
+    In ordinal classification we have no contradiction pairs; instead every
+    differently-labelled sample is a negative whose "hardness" is graded by the
+    label distance ``d_ij = dist_matrix[y_i][y_j]``.  We therefore replace the
+    binary indicator exponent with the *normalized* label distance:
 
-    so that ordinally-far negatives (e.g. label 0 vs 4) are pushed apart more
-    strongly than ordinally-near ones (e.g. label 0 vs 1).  ``alpha = 0`` makes
-    every negative weight 1.0 and recovers plain supervised SimCSE / SupCon.
+        w(d) = alpha ** d_norm,   d_norm = d / (K - 1)  in [0, 1]
+
+    This keeps the SimCSE parameterization intact and **bounded in [1, alpha]**
+    (for alpha >= 1): the farthest-label negative (d_norm = 1) gets exactly
+    ``alpha`` — the SimCSE hard-negative weight — while a label-adjacent negative
+    (small d_norm) stays near 1.  ``alpha = 1`` makes every weight 1.0 and
+    recovers plain supervised SimCSE / SupCon; ``alpha > 1`` pushes ordinally-far
+    negatives apart more strongly than ordinally-near ones.
 
     Because the batch contains many same-label samples (batch-all), the positive
     set ``P(i)`` per anchor has more than one element; we average the log-prob over
@@ -299,7 +305,8 @@ def ordinal_infonce_loss(embeddings, labels, dist_matrix,
         labels:     (B,) integer class labels.
         dist_matrix: (K, K) label-distance matrix (list or tensor); dist_matrix[i][j].
         temp:       softmax temperature ``t``.
-        alpha:      strength of the ordinal negative weighting (0 = uniform).
+        alpha:      SimCSE-style negative weight on the farthest label (>= 1);
+                    1.0 = plain SimCSE (no ordinal weighting).
         metric:     'cosine' (default) or 'euclidean'.
     Returns:
         Scalar loss (mean over anchors that have at least one positive).
@@ -322,12 +329,12 @@ def ordinal_infonce_loss(embeddings, labels, dist_matrix,
     pos_mask = same_label & ~eye          # same label, not self
     neg_mask = ~same_label                # different label
 
-    # Per-pair label distance -> ordinal negative weight w(d).
+    # Per-pair label distance -> SimCSE-faithful, bounded ordinal weight w = alpha**d_norm.
     dist_t = torch.as_tensor(dist_matrix, dtype=sim.dtype, device=device)  # (K, K)
     K = dist_t.shape[0]
     d = dist_t[labels][:, labels]                          # (B, B) = dist(y_i, y_j)
     d_norm = d / max(K - 1, 1)
-    w = torch.exp(alpha * d_norm)
+    w = alpha ** d_norm                                    # in [1, alpha] for alpha >= 1
 
     # Numerically-stable exp(sim), with self-similarity removed from the denominator.
     sim_max = sim.max(dim=1, keepdim=True).values.detach()
@@ -345,7 +352,7 @@ def ordinal_infonce_loss(embeddings, labels, dist_matrix,
 
 
 def make_ordinal_aux_trainer(base_trainer_cls, triplet_weight=0.1,
-                             triplet_temp=0.05, triplet_alpha=1.0,
+                             triplet_temp=0.05, triplet_alpha=2.0,
                              triplet_metric="cosine"):
     """Wrap any of the loss Trainers above so it adds the ordinal InfoNCE term.
 

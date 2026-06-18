@@ -211,10 +211,12 @@ def parse_args():
              "the SimCSE default). Only used with --add_triplet_loss.",
     )
     parser.add_argument(
-        "--triplet_alpha", type=float, default=1.0,
-        help="Strength of the ordinal label-distance weighting on negatives: "
-             "w(d)=exp(alpha*d_norm). 0 recovers plain supervised SimCSE; larger "
-             "values push ordinally-far negatives harder (default: 1.0). "
+        "--triplet_alpha", type=float, default=2.0,
+        help="SimCSE-faithful ordinal negative weight w(d)=alpha**d_norm, bounded "
+             "in [1, alpha]: the farthest-label negative gets weight alpha (like "
+             "SimCSE Eq. 8), label-adjacent negatives stay near 1. alpha=1 recovers "
+             "plain supervised SimCSE (no ordinal weighting); larger values push "
+             "ordinally-far negatives harder (default: 2.0). "
              "Only used with --add_triplet_loss.",
     )
     return parser.parse_args()
