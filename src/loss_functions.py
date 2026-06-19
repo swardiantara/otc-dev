@@ -362,23 +362,43 @@ def make_ordinal_aux_trainer(base_trainer_cls, triplet_weight=0.1,
     used by CE/CORAL) because they all return ``(loss, outputs)`` with an
     ``outputs.hidden_states`` populated once ``output_hidden_states=True`` is
     requested.
+
+    The auxiliary term is a *training-time* regularizer: it is only added while
+    the model is in training mode.  During evaluation the base loss is used
+    unchanged and hidden states are **not** requested -- otherwise they would
+    leak into ``outputs`` and the HF Trainer would return them as part of
+    ``predictions`` (a ``(logits, hidden_states)`` tuple), breaking
+    ``compute_metrics`` / ``compute_metrics_bce``.
     """
     class OrdinalAuxTrainer(base_trainer_cls):
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-            # Ask the encoder for hidden states so we can read the [CLS] embedding.
+            m = _unwrap(model)
+
+            # Evaluation/prediction: don't request hidden states and don't add the
+            # auxiliary term, so `predictions` stays as plain logits.
+            if not m.training:
+                return super().compute_loss(
+                    model, inputs, return_outputs=return_outputs, **kwargs)
+
+            # Training: ask the encoder for hidden states to read the [CLS] embedding.
             inputs = dict(inputs)
             inputs["output_hidden_states"] = True
             main_loss, outputs = super().compute_loss(
                 model, inputs, return_outputs=True, **kwargs)
 
-            m = _unwrap(model)
             labels = inputs["labels"]
             cls_emb = outputs.hidden_states[-1][:, 0]  # (B, H) last-layer [CLS]
             aux = ordinal_infonce_loss(
                 cls_emb, labels, m.dist_matrix,
                 temp=triplet_temp, alpha=triplet_alpha, metric=triplet_metric)
             loss = main_loss + triplet_weight * aux
-            return (loss, outputs) if return_outputs else loss
+
+            if return_outputs:
+                # Drop hidden states so they never leak into predictions if this
+                # branch is ever reached with return_outputs=True.
+                outputs.hidden_states = None
+                return (loss, outputs)
+            return loss
 
     OrdinalAuxTrainer.__name__ = f"Aux{base_trainer_cls.__name__}"
     return OrdinalAuxTrainer
