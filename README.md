@@ -114,6 +114,31 @@ Auxiliary-loss runs are tagged (`<LOSS>-TRIPa<alpha>`, e.g. `OLL2-TRIPa1p5`) in 
 
 Run the `scr/inference.py` file to evaluate the the model checkpoints generated during the training phase (corresponding to the different losses and parameters). It will output a csv file `src/outputs_training/output_metrics/metrics_test_set.csv` with all metrics introduced in our paper on the test sets. 
 
+#### Per-model inference artifacts & skip mechanism
+
+Like training (which skips a `(dataset, loss, lr, seed)` combo when its checkpoint already exists), inference now skips work that is already done. Each evaluated model gets its own artifact folder mirroring the training layout:
+
+```
+src/outputs_training/output_inference/<dataset>/<run_name>/
+    metrics.json          # all scalar test metrics
+    probabilities.npy     # raw per-sample prediction probabilities
+    confusion_matrix.csv  # K x K confusion matrix
+    tsne_test.pdf         # t-SNE of the test set ([CLS]), colored by label
+    tsne_test_ob1.pdf     # same, restricted to OB1-correct samples (|pred - true| <= 1)
+    _SUCCESS              # written last; its presence makes inference skip this run
+```
+
+A run is skipped when its `_SUCCESS` marker exists; pass `--force` to re-run anyway. The shared `metrics_test_set.csv` is still appended (once per model) for `analyze_results.py` / `visualize_results.py`.
+
+#### Representation visualization (t-SNE)
+
+To inspect the learned representations across losses (baseline vs `+Aux` with `alpha` = 1 / 1.5 / 2):
+
+- **During training**, a validation-set t-SNE of the `[CLS]` embeddings is saved per model to the git-tracked `tsne/<dataset>/<run_name>_val.pdf` (see `tsne/README.md`).
+- **During inference**, the test-set t-SNE (all samples) and an OB1-correct-only t-SNE are saved alongside the other inference artifacts above.
+
+Both stages accept `--tsne_max_samples N` (stratified per-class cap, default 5000; `0` = all samples) and `--no_tsne` to disable.
+
 **Note**: In `src/model_coral.py` we reimplemented the coral method as presented [here](https://github.com/Raschka-research-group/coral-cnn). 
 
 ## Citation

@@ -13,6 +13,7 @@ from src.loss_functions import (
     WKLTrainer, SOFT2Trainer, SOFT3Trainer, SOFT4Trainer, EMDTrainer,
     BCEOrdinalTrainer, make_ordinal_aux_trainer,
 )
+from src.tsne_utils import extract_cls_embeddings, plot_tsne
 import os
 import sys
 import torch
@@ -219,6 +220,15 @@ def parse_args():
              "ordinally-far negatives harder (default: 2.0). "
              "Only used with --add_triplet_loss.",
     )
+    parser.add_argument(
+        "--tsne_max_samples", type=int, default=5000,
+        help="Stratified per-class cap on points used for the validation-set "
+             "t-SNE plot (default: 5000). Set 0 to plot all samples.",
+    )
+    parser.add_argument(
+        "--no_tsne", action="store_true",
+        help="Disable the per-model validation-set t-SNE visualization.",
+    )
     return parser.parse_args()
 
 
@@ -394,6 +404,23 @@ if __name__ == '__main__':
                     trainer.evaluate()
 
                     trainer.save_model(str(save_dir))
+
+                    # Validation-set t-SNE of the learned [CLS] representation.
+                    # Saved to a separate, git-trackable top-level folder (kept out
+                    # of the checkpoint/metrics trees so it's easy to push).
+                    if not args.no_tsne:
+                        try:
+                            val_tsne_path = (
+                                ROOT_PATH / "tsne" / data_file / f"{save_dir.name}_val.pdf"
+                            )
+                            val_embs = extract_cls_embeddings(
+                                model, encoded_dataset["validation"], device, batch_size=256)
+                            plot_tsne(
+                                val_embs, encoded_dataset["validation"]["label"],
+                                title=f"{model_name} (val)", save_path=val_tsne_path,
+                                max_samples=args.tsne_max_samples)
+                        except Exception as e:
+                            print(f"[t-SNE] validation plot failed for {save_dir.name}: {e}")
 
                     output_path_metrics = (
                         ROOT_PATH / "src" / "outputs_training" / "output_metrics"
