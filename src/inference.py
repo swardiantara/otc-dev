@@ -1,5 +1,6 @@
 import argparse
 from src.model_coral import CoralModel
+from src.tsne_utils import extract_cls_embeddings, plot_tsne
 import os
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from pathlib import Path
@@ -128,6 +129,19 @@ def parse_args():
         choices=["amazon_reviews", "snli", "sst5", "yelp"],
         help="Datasets to evaluate (default: all available).",
     )
+    parser.add_argument(
+        "--tsne_max_samples", type=int, default=5000,
+        help="Stratified per-class cap on points used for the test-set t-SNE "
+             "plots (default: 5000). Set 0 to plot all samples.",
+    )
+    parser.add_argument(
+        "--no_tsne", action="store_true",
+        help="Disable the per-model test-set t-SNE visualizations.",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Re-run inference even for models whose _SUCCESS marker already exists.",
+    )
     return parser.parse_args()
 
 
@@ -157,6 +171,13 @@ if __name__ == '__main__':
             / dataset_file / "metrics_test_set.csv"
         )
         output_path_metrics.parent.mkdir(parents=True, exist_ok=True)
+
+        # Per-model inference artifacts mirror the training layout (sibling of
+        # output_models / output_metrics). Each run gets its own folder gated by
+        # a _SUCCESS marker that the skip logic checks.
+        inference_root = (
+            ROOT_PATH / "src" / "outputs_training" / "output_inference" / dataset_file
+        )
 
         max_len = datasets[dataset_file]["tok_len"]
         sentence1_key, sentence2_key = datasets[dataset_file]["task"]
@@ -218,7 +239,11 @@ if __name__ == '__main__':
             loss_func = dictpath[path]["loss"]        # full label, e.g. "OLL2-TRIPa1p5"
             base_loss = dictpath[path]["base_loss"]   # base loss, e.g. "OLL2" (drives the head)
 
-            if "trained_model" in dt.columns and trained_model in dt["trained_model"].tolist():
+            # File-based skip: a run is "done" once its _SUCCESS marker exists.
+            artifact_dir = inference_root / trained_model
+            success_marker = artifact_dir / "_SUCCESS"
+            if success_marker.is_file() and not args.force:
+                print(f"Skipping {dataset_file}/{trained_model} (already inferred)")
                 continue
 
             pre_trained_model = f"{model_dir}bert-tiny"
@@ -248,9 +273,12 @@ if __name__ == '__main__':
                         token_type_ids=torch.tensor(inputs["token_type_ids"]).to(device),
                     )
                 if base_loss == "CORAL":
+                    coral_logits = preds.logits.cpu().detach().numpy()
+                    # P(y > k) per cumulative threshold; stored as raw probabilities.
+                    distributions.extend(expit(coral_logits).tolist())
                     predictions_test.extend(
-                        (np.column_stack((np.zeros((preds.logits.cpu().detach().numpy().shape[0], 1)),
-                                          expit(preds.logits.cpu().detach().numpy()))) > 0.5).sum(axis=1)
+                        (np.column_stack((np.zeros((coral_logits.shape[0], 1)),
+                                          expit(coral_logits))) > 0.5).sum(axis=1)
                     )
                 elif base_loss == "BCE":
                     # BCE ordinal: sigmoid per position, class = (positions > 0.5) - 1
@@ -266,12 +294,74 @@ if __name__ == '__main__':
             dico_logs_ = {}
             evaluate_model(labels=encoded_dataset["test"]["label"], preds=predictions_test)
 
-            prefix = [dataset_file, loss_func, pre_trained_model, trained_model]
-            new_row = build_inference_row(prefix, dico_logs_, inference_cols)
+            # ---- Shared metrics_test_set.csv (append once per model) ----
+            already_in_csv = (
+                "trained_model" in dt.columns
+                and trained_model in dt["trained_model"].tolist()
+            )
+            if not already_in_csv:
+                prefix = [dataset_file, loss_func, pre_trained_model, trained_model]
+                new_row = build_inference_row(prefix, dico_logs_, inference_cols)
+                write_header = (
+                    not output_path_metrics.is_file()
+                    or output_path_metrics.stat().st_size == 0
+                )
+                with open(output_path_metrics, "a+", newline="") as f:
+                    writer = csv.writer(f)
+                    if write_header:
+                        writer.writerow(inference_cols)
+                    writer.writerow(new_row)
 
-            write_header = not output_path_metrics.is_file() or output_path_metrics.stat().st_size == 0
-            with open(output_path_metrics, "a+", newline="") as f:
-                writer = csv.writer(f)
-                if write_header:
-                    writer.writerow(inference_cols)
-                writer.writerow(new_row)
+            # ---- Per-model inference artifacts (mirrors training layout) ----
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+
+            # metrics.json: all scalar metrics (confusion matrix saved separately).
+            metrics_out = {"dataset": dataset_file, "loss": loss_func,
+                           "trained_model": trained_model}
+            for key, val in dico_logs_.items():
+                if key == "labels-confusion_matrix":
+                    continue
+                if isinstance(val, np.ndarray):
+                    val = val.tolist()
+                elif isinstance(val, np.floating):
+                    val = float(val)
+                elif isinstance(val, np.integer):
+                    val = int(val)
+                metrics_out[key] = val
+            with open(artifact_dir / "metrics.json", "w") as f:
+                json.dump(metrics_out, f, indent=2)
+
+            # Raw per-sample prediction probabilities + confusion matrix.
+            np.save(artifact_dir / "probabilities.npy", np.array(distributions))
+            cm = dico_logs_.get("labels-confusion_matrix")
+            if cm is not None:
+                np.savetxt(artifact_dir / "confusion_matrix.csv",
+                           np.asarray(cm), fmt="%d", delimiter=",")
+
+            # Test-set t-SNE: all samples, plus the OB1-correct subset
+            # (ordinal distance between prediction and true label <= 1).
+            if not args.no_tsne:
+                try:
+                    labels_arr = np.array(encoded_dataset["test"]["label"])
+                    preds_arr = np.array(predictions_test)
+                    test_embs = extract_cls_embeddings(
+                        model, encoded_dataset["test"], device, batch_size=256)
+                    plot_tsne(
+                        test_embs, labels_arr, title=f"{trained_model} (test)",
+                        save_path=artifact_dir / "tsne_test.pdf",
+                        max_samples=args.tsne_max_samples)
+                    ob1_mask = np.array([
+                        dist_matrix[int(p)][int(t)] <= 1
+                        for p, t in zip(preds_arr, labels_arr)
+                    ])
+                    if ob1_mask.any():
+                        plot_tsne(
+                            test_embs[ob1_mask], labels_arr[ob1_mask],
+                            title=f"{trained_model} (test, OB1-correct)",
+                            save_path=artifact_dir / "tsne_test_ob1.pdf",
+                            max_samples=args.tsne_max_samples)
+                except Exception as e:
+                    print(f"[t-SNE] test plot failed for {trained_model}: {e}")
+
+            # Mark the run fully processed — gates the skip on future runs.
+            success_marker.write_text("ok\n")
