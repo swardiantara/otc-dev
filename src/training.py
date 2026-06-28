@@ -11,7 +11,7 @@ from src.model_coral import CoralModel
 from src.loss_functions import (
     OLL1Trainer, OLL15Trainer, OLL2Trainer,
     WKLTrainer, SOFT2Trainer, SOFT3Trainer, SOFT4Trainer, EMDTrainer,
-    BCEOrdinalTrainer, make_ordinal_aux_trainer,
+    BCEOrdinalTrainer, CORNTrainer, make_ordinal_aux_trainer,
 )
 from src.tsne_utils import extract_cls_embeddings, plot_tsne
 import os
@@ -113,6 +113,36 @@ def compute_metrics_coral(pred):
     return {k: v for k, v in dico_logs_.items() if k != "labels-confusion_matrix"}
 
 
+def compute_metrics_corn(pred):
+    labels = pred.label_ids
+    # CORN: P(y > k) = prod_{j<=k} sigmoid(logit_j); class = #thresholds passed.
+    cum_probs = np.cumprod(expit(pred.predictions), axis=1)
+    preds = (cum_probs > 0.5).sum(axis=1)
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels, preds, average='weighted')
+    acc_labels = accuracy_score(labels, preds)
+    cm_labels = confusion_matrix(y_true=labels, y_pred=preds)
+
+    distances = [dist_matrix[preds[k]][labels[k]] for k in range(len(preds))]
+    cnt = Counter(distances)
+
+    dico_logs_["labels-accuracy"] = round(acc_labels, 4)
+    dico_logs_["labels-precision"] = round(precision, 4)
+    dico_logs_["labels-recall"] = round(recall, 4)
+    dico_logs_["labels-f1_score"] = round(f1, 4)
+    dico_logs_["labels-confusion_matrix"] = cm_labels
+
+    for k in np.sort(list(cnt.keys()))[1:]:
+        dico_logs_[f"distance_{k}"] = round(cnt[k] / len(preds), 4)
+
+    acc = acc_labels
+    for k in np.sort(list(cnt.keys()))[1:-1]:
+        acc += cnt[k] / len(preds)
+        dico_logs_[f"off-by-{k}-accuracy"] = round(acc, 4)
+
+    return {k: v for k, v in dico_logs_.items() if k != "labels-confusion_matrix"}
+
+
 def compute_metrics(pred):
     labels = pred.label_ids
     preds = pred.predictions.argmax(-1)
@@ -164,10 +194,11 @@ losses_dict = {
     "EMD": EMDTrainer,
     "CORAL": Trainer,
     "BCE": BCEOrdinalTrainer,
+    "CORN": CORNTrainer,
 }
 
 ALL_DATASETS = ["amazon_reviews", "sst5", "yelp", "snli"]
-ALL_LOSSES = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE"]
+ALL_LOSSES = ["CE", "OLL1", "OLL15", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE", "CORN"]
 ALL_LRS = [1e-4, 7.5e-5, 5e-5, 2.5e-5, 1e-5]
 
 
@@ -335,6 +366,12 @@ if __name__ == '__main__':
                     if loss_type == "CORAL":
                         model = CoralModel.from_pretrained(
                             model_checkpoint, num_labels=num_classes).to(device)
+                    elif loss_type == "CORN":
+                        # CORN uses a standard head with K-1 logits (one per binary
+                        # task); rank consistency comes from the conditional-probability
+                        # objective, not the architecture (unlike CORAL).
+                        model = AutoModelForSequenceClassification.from_pretrained(
+                            model_checkpoint, num_labels=num_classes - 1).to(device)
                     else:
                         model = AutoModelForSequenceClassification.from_pretrained(
                             model_checkpoint, num_labels=num_classes).to(device)
@@ -386,6 +423,8 @@ if __name__ == '__main__':
                         eval_function = compute_metrics_coral
                     elif loss_type == "BCE":
                         eval_function = compute_metrics_bce
+                    elif loss_type == "CORN":
+                        eval_function = compute_metrics_corn
                     else:
                         eval_function = compute_metrics
 

@@ -259,6 +259,68 @@ class EMDTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
+def corn_loss(logits, y_train, num_classes):
+    """CORN loss (Shi, Cao & Raschka, 2021) — rank-consistent ordinal regression
+    via conditional probabilities. Faithful port of
+    ``coral_pytorch.losses.corn_loss``.
+
+    For each of the K-1 binary tasks ``i`` the conditional probability
+    P(y > i | y > i-1) is estimated using only the *conditional subset* of
+    samples with y > i-1. Multiplying these conditionals (cumulative product of
+    sigmoids at inference) yields a monotonically non-increasing P(y > k), which
+    guarantees rank consistency without CORAL's weight-sharing constraint.
+
+    Args:
+        logits:  (B, K-1) raw logits (one per binary task).
+        y_train: (B,) integer labels in [0, K-1].
+        num_classes: K.
+    """
+    sets = []
+    for i in range(num_classes - 1):
+        label_mask = y_train > i - 1                       # samples with y > i-1
+        label_tensor = (y_train[label_mask] > i).to(torch.int64)
+        sets.append((label_mask, label_tensor))
+
+    num_examples = 0
+    losses = 0.0
+    for task_index, s in enumerate(sets):
+        train_examples = s[0]
+        train_labels = s[1]
+
+        if len(train_labels) < 1:
+            continue
+
+        num_examples += len(train_labels)
+        pred = logits[train_examples, task_index]
+
+        loss = -torch.sum(
+            F.logsigmoid(pred) * train_labels
+            + (F.logsigmoid(pred) - pred) * (1 - train_labels)
+        )
+        losses += loss
+
+    if num_examples == 0:
+        return logits.sum() * 0.0  # keep a graph connection; degenerate batch
+    return losses / num_examples
+
+
+class CORNTrainer(Trainer):
+    """CORN loss trainer. Expects a model whose head emits K-1 logits.
+
+    Labels (0..K-1) are out of range for the model's built-in
+    cross-entropy over K-1 outputs, so labels are withheld from the forward
+    pass; the CORN objective is computed from the logits directly.
+    """
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs["labels"]
+        model_inputs = {k: v for k, v in inputs.items() if k != "labels"}
+        outputs = model(**model_inputs)
+        logits = outputs.logits                  # (B, K-1)
+        num_classes = logits.shape[1] + 1
+        loss = corn_loss(logits, labels, num_classes)
+        return (loss, outputs) if return_outputs else loss
+
+
 # ===========================================================================
 # Ordinal-aware auxiliary contrastive loss (SimCSE Section 6.3 generalization)
 # ===========================================================================
