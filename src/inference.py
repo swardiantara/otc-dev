@@ -159,7 +159,7 @@ if __name__ == '__main__':
     model_dir = "google/"
     tokenizer = AutoTokenizer.from_pretrained(model_checkpoint)
 
-    losses = ["CE", "OLL15", "OLL1", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE"]
+    losses = ["CE", "OLL15", "OLL1", "OLL2", "WKL", "SOFT2", "SOFT3", "SOFT4", "EMD", "CORAL", "BCE", "CORN"]
 
     for dataset_file in args.datasets:
         num_classes = datasets[dataset_file]["num_classes"]
@@ -280,6 +280,12 @@ if __name__ == '__main__':
                         (np.column_stack((np.zeros((coral_logits.shape[0], 1)),
                                           expit(coral_logits))) > 0.5).sum(axis=1)
                     )
+                elif base_loss == "CORN":
+                    # CORN: rank-consistent cumulative probs P(y>k)=prod sigmoid(logit_j);
+                    # class = number of thresholds exceeding 0.5.
+                    cum_probs = np.cumprod(expit(preds.logits.cpu().detach().numpy()), axis=1)
+                    distributions.extend(cum_probs.tolist())
+                    predictions_test.extend((cum_probs > 0.5).sum(axis=1).tolist())
                 elif base_loss == "BCE":
                     # BCE ordinal: sigmoid per position, class = (positions > 0.5) - 1
                     # target[k]=1 iff k<=y, so predicted y = count(sigmoid>0.5) - 1
